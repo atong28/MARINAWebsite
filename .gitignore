@@ -3,4 +3,4 @@
 !.pixi/config.toml
 .vscode/*
 data/*
-logs/*
+logs/

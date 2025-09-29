@@ -44,6 +44,7 @@ The system uses a transformer-based architecture with cross-attention mechanisms
 - At least 4GB RAM available
 - Model checkpoint files in `data/` directory:
   - `best.ckpt`: PyTorch Lightning model checkpoint (~2GB)
+  - `count_hashes_under_radius_10.pkl`: Dataset count for entropy fp generation
   - `params.json`: Model configuration parameters
   - `rankingset.pt`: Sparse tensor with molecular fingerprints
   - `rankingset_meta.pkl`: Metadata mapping indices to SMILES strings
@@ -58,7 +59,7 @@ The system uses a transformer-based architecture with cross-attention mechanisms
 
 2. **Run with Docker Compose:**
    ```bash
-   docker-compose up -d
+   PORT=[PORT] docker-compose up -d
    ```
 
 3. **Quick restart with logs (recommended):**
@@ -67,7 +68,7 @@ The system uses a transformer-based architecture with cross-attention mechanisms
    ```
 
 4. **Access the web interface:**
-   Open your browser to `http://localhost:5000`
+   Open your browser to `http://localhost:[PORT]`
 
 ### Logs
 
@@ -151,26 +152,9 @@ curl -X POST -H "Content-Type: application/json" \
   http://localhost:5000/predict
 ```
 
-#### Predict from Dataset Index
-```bash
-curl -X POST -H "Content-Type: application/json" \
-  -d '{"index": 42, "k": 5}' \
-  http://localhost:5000/predict
-```
-
 #### Get Metadata
 ```bash
 curl http://localhost:5000/meta/123
-```
-
-#### Calculate Similarity
-```bash
-curl -X POST -H "Content-Type: application/json" \
-  -d '{
-    "pred_fp": [0.1, 0.9, 0.3, ...],
-    "smiles": "CCO"
-  }' \
-  http://localhost:5000/similarity
 ```
 
 ## Data Format Specifications
@@ -200,115 +184,10 @@ curl -X POST -H "Content-Type: application/json" \
 - **Example**: `180.16`
 - **Units**: g/mol
 
-## Development
-
-### Project Structure
-
-```
-MARINABackend/
-├── src/                    # Source code
-│   ├── model.py           # MARINA model architecture
-│   ├── data.py            # Dataset and data loading
-│   ├── inputs.py          # Spectral input processing
-│   ├── predictor.py       # Prediction interface
-│   ├── ranker.py          # Similarity ranking
-│   ├── encoder.py         # Positional encoding
-│   ├── attention.py       # Multi-head attention
-│   ├── fp_loader.py       # Fingerprint loading
-│   ├── fp_utils.py        # Fingerprint utilities
-│   ├── settings.py        # Configuration
-│   └── const.py           # Constants
-├── static/                # Web interface
-│   ├── css/styles.css     # Modern CSS styling
-│   ├── js/app.js          # Interactive JavaScript
-│   └── index.html         # Main HTML page
-├── data/                  # Model checkpoints and data files
-├── app.py                 # Flask application
-├── docker-compose.yml     # Docker Compose configuration
-├── Dockerfile            # Docker image definition
-├── pixi.toml             # Pixi package configuration
-└── requirements.txt      # Python dependencies
-```
-
-### Key Components
-
-#### Model Architecture
-- **Cross-Attention Blocks**: Process multi-modal spectral inputs
-- **Self-Attention Layers**: Intra-modal feature processing  
-- **Positional Encoding**: Encode spectral coordinates
-- **Global CLS Token**: Aggregate information across modalities
-
-#### Data Processing
-- **Spectral Input Loader**: Handles different NMR/MS formats
-- **Fingerprint Loader**: Manages molecular fingerprint data
-- **Collation**: Batches variable-length sequences
-
-#### Web Interface
-- **Modern UI**: Clean, responsive design with tabbed interface
-- **Data Validation**: Real-time input validation and error handling
-- **Clipboard Integration**: Easy data import from spreadsheets
-- **Results Visualization**: Interactive result cards with similarity scores
-
-### Configuration
-
-Model parameters are stored in `ckpt/params.json` and include:
-
-- **Model Dimensions**: `dim_model`, `heads`, `layers`, `ff_dim`
-- **Input Processing**: `nmr_dim_coords`, `ms_dim_coords`
-- **Training Parameters**: `lr`, `batch_size`, `dropout`
-- **Fingerprint Settings**: `out_dim`, `fp_type`
-
 ### Environment Variables
 
 - `PORT`: Server port (default: 5000)
-- `CKPT_DIR`: Checkpoint directory path
-- `ADMIN_PW`: Admin password (optional)
-- `SECRET_KEY`: Flask secret key (optional)
-
-## Troubleshooting
-
-### Common Issues
-
-1. **Model Loading Errors**
-   - Ensure `data/best.ckpt` and `data/params.json` exist
-   - Check file permissions and disk space
-   - Verify PyTorch version compatibility
-   - Use `./restart.sh` to restart with fresh containers
-
-2. **Data Loading Issues**
-   - Confirm `data/rankingset.pt` and `data/rankingset_meta.pkl` are present
-   - Check data file integrity and format
-   - Verify dataset paths in configuration
-   - Ensure the data directory is properly mounted in Docker
-
-3. **Web Interface Problems**
-   - Check browser console for JavaScript errors
-   - Ensure server is running on correct port
-   - Verify static file serving is working
-
-4. **Prediction Failures**
-   - Validate input data format and ranges
-   - Check model memory requirements
-   - Review server logs for detailed error messages
-
-### Performance Optimization
-
-- **Memory Usage**: Model requires ~4GB RAM for inference
-- **Batch Processing**: Currently supports single predictions
-- **Caching**: Consider implementing result caching for repeated queries
-- **GPU Support**: Model can be adapted for GPU acceleration
-
-### Logging
-
-The application uses Python's logging module with different levels:
-- `INFO`: General application flow
-- `WARNING`: Non-critical issues
-- `ERROR`: Critical errors requiring attention
-- `DEBUG`: Detailed debugging information
-
-## License
-
-This project is part of the GURU research initiative at UCSD. Please contact the authors for licensing information.
+- `DATA_DIR`: Data directory path
 
 ## Citation
 
@@ -317,33 +196,3 @@ If you use this software in your research, please cite:
 ```
 
 ```
-
-## Support
-
-For technical support and questions:
-- Create an issue in the project repository
-- Contact the development team at UCSD
-- Check the troubleshooting section above
-
-## Changelog
-
-### v2.1.1 (Current)
-- **Model Initialization**: Pre-loads model during startup to eliminate cold start delays
-- **Enhanced Health Checks**: Detailed model status reporting with initialization progress
-- **Batch Collation Fix**: Fixed single prediction handling in data collation
-- **Spreadsheet-like Tables**: Full keyboard navigation, range selection, copy/paste
-- **Enhanced Error Handling**: Detailed error messages with troubleshooting steps
-- **Docker Improvements**: Updated to use `data/` directory, restart script
-- **HSQC Column Order**: Fixed to show H-1 then C-13 shifts
-- **Backend Health Checks**: Automatic backend availability detection
-- Complete frontend redesign with modern UI
-- Tabbed interface for different spectral data types
-- Enhanced input validation and error handling
-- Improved result visualization
-- Bug fixes in data loading and model inference
-
-### v1.0.0
-- Initial release with basic Flask interface
-- Core MARINA model implementation
-- Docker containerization
-- Basic prediction API endpoints

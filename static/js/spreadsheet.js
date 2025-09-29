@@ -39,11 +39,9 @@ class SpreadsheetTable {
                 
                 // Add paste event listener directly to each input
                 input.addEventListener('paste', (e) => {
-                    console.log('Input paste event triggered on:', input); // Debug log
                     e.preventDefault();
                     e.stopPropagation();
                     const pastedText = e.clipboardData.getData('text/plain');
-                    console.log('Pasted text from input:', pastedText); // Debug log
                     if (pastedText) {
                         this.pasteData(pastedText);
                     }
@@ -115,11 +113,9 @@ class SpreadsheetTable {
         
         // Add paste event listener to all inputs in the table
         this.table.addEventListener('paste', (e) => {
-            console.log('Paste event triggered on:', e.target); // Debug log
             e.preventDefault();
             e.stopPropagation();
             const pastedText = e.clipboardData.getData('text/plain');
-            console.log('Pasted text:', pastedText); // Debug log
             if (pastedText) {
                 this.pasteData(pastedText);
             }
@@ -181,7 +177,6 @@ class SpreadsheetTable {
                 case 'v':
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault();
-                        console.log('Ctrl+V detected, calling pasteSelection');
                         this.pasteSelection();
                     }
                     break;
@@ -352,14 +347,11 @@ class SpreadsheetTable {
         // Try to get clipboard data directly
         if (navigator.clipboard && navigator.clipboard.readText) {
             navigator.clipboard.readText().then(text => {
-                console.log('Clipboard API success, text:', text);
                 this.pasteData(text);
             }).catch(err => {
-                console.log('Clipboard API failed:', err);
                 this.showPasteDialog();
             });
         } else {
-            console.log('Clipboard API not available, showing dialog');
             this.showPasteDialog();
         }
     }
@@ -367,7 +359,6 @@ class SpreadsheetTable {
     showPasteDialog() {
         const text = prompt('Paste your data here (tab-separated values):');
         if (text && text.trim()) {
-            console.log('Dialog paste text:', text);
             this.pasteData(text);
         }
     }
@@ -375,7 +366,6 @@ class SpreadsheetTable {
     // Test function to manually trigger paste with sample data
     testPaste() {
         const testData = "7.2\t120.5\t1.0\n7.5\t125.0\t0.8\n8.1\t130.2\t1.2";
-        console.log('Testing paste with data:', testData);
         this.pasteData(testData);
     }
     
@@ -401,7 +391,6 @@ class SpreadsheetTable {
     }
     
     pasteData(text) {
-        console.log('Paste data called with:', text); // Debug log
         const lines = text.trim().split('\n');
         const data = lines.map(line => line.split(/[\t,;]/).map(v => v.trim().replace(/\r/g, ''))); // Handle various separators and remove \r
         
@@ -563,14 +552,12 @@ class SpreadsheetTable {
 
 // Initialize spreadsheet functionality for all tables
 document.addEventListener('DOMContentLoaded', function() {
-    console.log('Initializing spreadsheet tables...'); // Debug log
     // Initialize spreadsheet for all data tables
     const tableIds = ['hsqc-table', 'h_nmr-table', 'c_nmr-table', 'mass_spec-table'];
     const spreadsheetTables = [];
     
     tableIds.forEach(tableId => {
         if (document.getElementById(tableId)) {
-            console.log('Creating spreadsheet table for:', tableId); // Debug log
             const table = new SpreadsheetTable(tableId);
             spreadsheetTables.push(table);
             
@@ -579,11 +566,8 @@ document.addEventListener('DOMContentLoaded', function() {
         }
     });
     
-    console.log('Spreadsheet tables initialized:', spreadsheetTables.length); // Debug log
-    
     // Add document-level paste handler for better coverage
     document.addEventListener('paste', function(e) {
-        console.log('Document paste event triggered, active element:', document.activeElement); // Debug log
         // Check if the paste is happening in one of our tables
         const activeElement = document.activeElement;
         let targetTable = null;
@@ -592,7 +576,6 @@ document.addEventListener('DOMContentLoaded', function() {
             if (table.table.contains(activeElement) || 
                 (activeElement.tagName === 'INPUT' && table.table.contains(activeElement))) {
                 targetTable = table;
-                console.log('Found target table:', table.table.id); // Debug log
                 break;
             }
         }
@@ -602,7 +585,6 @@ document.addEventListener('DOMContentLoaded', function() {
             e.stopPropagation();
             const pastedText = e.clipboardData.getData('text/plain');
             if (pastedText) {
-                console.log('Calling pasteData with:', pastedText); // Debug log
                 targetTable.pasteData(pastedText);
             }
         }

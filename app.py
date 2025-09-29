@@ -164,41 +164,7 @@ def meta(idx: int):
   return jsonify({'smiles': entry.get('smiles')})
 
 
-@app.route('/similarity', methods=['POST'])
-def similarity():
-  """Compute Tanimoto similarity between a predicted floating fingerprint and a SMILES-derived fingerprint.
-
-  Request JSON: {'pred_fp': [...], 'smiles': '...'}
-  """
-  data = request.get_json(force=True)
-  pred_fp = data.get('pred_fp')
-  smiles = data.get('smiles')
-  if pred_fp is None or smiles is None:
-    return jsonify({'error': 'provide pred_fp and smiles in JSON body'}), 400
-
-  # Try to compute fingerprint from SMILES using RDKit if available
-  if not RDKIT_AVAILABLE:
-    return jsonify({'error': 'RDKit required to compute SMILES fingerprint on server. Install rdkit or compute client-side.'}), 501
-
-  mol = Chem.MolFromSmiles(smiles)
-  if mol is None:
-    return jsonify({'error': 'invalid smiles'}), 400
-  # use Morgan fingerprint (radius=2) as bit vector
-  fp = AllChem.GetMorganFingerprintAsBitVect(mol, radius=2, nBits=len(pred_fp))
-  # convert bitvector to list of 0/1
-  smi_fp = list(fp.ToBitString())
-  smi_fp = [int(x) for x in smi_fp]
-
-  # pred_fp may be float; binarize by threshold 0.5
-  pred_bin = [1 if float(x) > 0.5 else 0 for x in pred_fp]
-
-  # compute tanimoto
-  a = np.array(pred_bin)
-  b = np.array(smi_fp)
-  inter = int(np.sum(a & b))
-  union = int(np.sum((a | b)))
-  tanimoto = inter / union if union > 0 else 0.0
-  return jsonify({'tanimoto': float(tanimoto), 'intersection': inter, 'union': union})
+## Removed /similarity endpoint for MVP (frontend uses top-k scores already)
 
 # Minimal prediction endpoint (CPU backend)
 @app.route('/predict', methods=['POST'])
@@ -229,20 +195,7 @@ def predict():
     try:
         # Model is already loaded from startup
         
-        if 'index' in payload:
-            idx = int(payload['index'])
-            out = predictor.predict_from_index(idx, k=k, input_types=payload.get('input_types'))
-            # predictor may return (scores, indices) or (scores, indices, pred_fp)
-            if isinstance(out, tuple) and len(out) >= 2:
-                scores, indices = out[0], out[1]
-                pred_fp = out[2] if len(out) > 2 else None
-                resp = {'topk_scores': scores, 'topk_indices': indices}
-                if pred_fp is not None:
-                    resp['pred_fp'] = pred_fp
-                return jsonify(resp)
-            else:
-                return jsonify({'error': 'unexpected predictor output'}), 500
-        elif 'raw' in payload:
+        if 'raw' in payload:
             raw_data = payload['raw']
             logger.info(f"Predicting from raw data with k={k}")
             logger.info(f"Raw data keys: {list(raw_data.keys())}")
@@ -264,7 +217,7 @@ def predict():
                 logger.error(f"Unexpected predictor output: {out}")
                 return jsonify({'error': 'unexpected predictor output'}), 500
         else:
-            return jsonify({'error': "provide 'index' or 'raw' in request body"}), 400
+            return jsonify({'error': "provide 'raw' in request body"}), 400
     except Exception as e:
         logger.error(f"Prediction error: {e}")
         traceback.print_exc()

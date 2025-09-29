@@ -1,7 +1,7 @@
 import json
 import logging
 import threading
-from typing import Dict, Any, Optional, Tuple
+from typing import Dict, Any, Optional
 import pickle
 import torch
 import torch.nn.functional as F
@@ -11,8 +11,6 @@ from src.settings import SPECTREArgs
 from src.model import SPECTRE
 from src.fp_loader import make_fp_loader
 from src.data import collate
-from src.const import DATASET_ROOT, CODE_ROOT
-from src.inputs import SpectralInputLoader, MFInputLoader
 from src.ranker import RankingSet
 
 logger = logging.getLogger(__name__)
@@ -79,66 +77,7 @@ def load_model(ckpt_path: str = "data/best.ckpt", params_path: str = "data/param
     return _model
 
 
-def _prepare_batch_from_index(idx: int, input_types: Optional[list] = None) -> Tuple[Dict[str, torch.Tensor], torch.Tensor]:
-    """Load a single example by index and collate into a batch (B=1).
-
-    Returns (batch_inputs, batch_fps)
-    """
-    global _args, _fp_loader
-    if _args is None or _fp_loader is None:
-        raise RuntimeError("Model and fp_loader not loaded; call load_model() first")
-
-    # load index map
-    idx_path = os.path.join(DATASET_ROOT, 'index.pkl')
-    if not os.path.exists(idx_path):
-        # Try alternative path if data directory doesn't exist
-        alt_path = os.path.join(CODE_ROOT, 'index.pkl')
-        if os.path.exists(alt_path):
-            idx_path = alt_path
-        else:
-            raise FileNotFoundError(f"index.pkl not found in {DATASET_ROOT} or {CODE_ROOT}")
-    
-    with open(idx_path, 'rb') as f:
-        index_map = pickle.load(f)
-
-    if idx not in index_map:
-        raise KeyError(f"Index {idx} not found in index.pkl")
-
-    # prepare loaders
-    spectral_loader = SpectralInputLoader(DATASET_ROOT, {idx: index_map[idx]})
-    mf_loader = MFInputLoader(_fp_loader)
-    entry_inputs = spectral_loader.load(idx, input_types or _args.input_types, jittering=0.0)
-    fp = mf_loader.load(idx)
-
-    batch_inputs, batch_fps = collate([(entry_inputs, fp)])
-    return batch_inputs, batch_fps
-
-
-def predict_from_index(idx: int, k: int = 5, input_types: Optional[list] = None):
-    """Run model on example index and return top-k indices and scores.
-
-    Returns (topk_scores, topk_indices)
-    """
-    global _model
-    if _model is None:
-        load_model()
-
-    batch_inputs, batch_fps = _prepare_batch_from_index(idx, input_types)
-
-    with _model_lock:
-        with torch.no_grad():
-            out = _model(batch_inputs)
-            # model returns (B, out_dim) predictions
-            preds = out.detach().cpu()
-            # for retrieval we expect to use a ranker externally; here we return the predicted fingerprint
-            pred_fp = preds[0]
-            # as a convenience also return the top-k highest fingerprint dimensions (not retrieval indices)
-            if pred_fp.ndim == 1:
-                vals, idxs = torch.topk(pred_fp, k=min(k, pred_fp.numel()))
-            else:
-                vals, idxs = torch.topk(pred_fp.flatten(), k=min(k, pred_fp.numel()))
-
-    return vals.cpu().tolist(), idxs.cpu().tolist(), pred_fp.tolist()
+## Index-based prediction helpers removed for MVP (dataset not hosted on server)
 
 
 def predict_from_raw(raw_inputs: Dict[str, Any], k: int = 5):

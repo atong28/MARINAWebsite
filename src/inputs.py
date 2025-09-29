@@ -9,7 +9,7 @@ from src.fp_loader import FPLoader
 
 class SpectralInputLoader:
     '''
-    Represents the SPECTRE input data types.
+    Represents the MARINA input data types.
     
     - HSQC NMR ('hsqc')
     - H NMR ('h_nmr')

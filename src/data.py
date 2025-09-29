@@ -13,21 +13,21 @@ from torch.nn.utils.rnn import pad_sequence
 import pytorch_lightning as pl
 
 from src.const import DEBUG_LEN, DROP_PERCENTAGE, INPUTS_CANONICAL_ORDER, DATASET_ROOT
-from src.settings import SPECTREArgs
+from src.settings import MARINAArgs
 from src.fp_loader import FPLoader
 from src.inputs import SpectralInputLoader, MFInputLoader
 # from src.modality_dropout_scheduler import ModalityDropoutScheduler
 
 logger = logging.getLogger('lightning')
 
-class SPECTREDataset(Dataset):
-    def __init__(self, args: SPECTREArgs, fp_loader: FPLoader, split: str = 'train', override_input_types: Optional[list[str]] = None):
+class MARINADataset(Dataset):
+    def __init__(self, args: MARINAArgs, fp_loader: FPLoader, split: str = 'train', override_input_types: Optional[list[str]] = None):
         try:
             self.args = args  # <-- store args
 
             if split != 'train':
                 args.requires = args.input_types
-            logger.info(f'[SPECTREDataset] Initializing {split} dataset with input types {args.input_types} and required inputs {args.requires}')
+            logger.info(f'[MARINADataset] Initializing {split} dataset with input types {args.input_types} and required inputs {args.requires}')
             self.input_types = args.input_types if override_input_types is None else override_input_types
             self.requires = args.requires if override_input_types is None else override_input_types
 
@@ -43,19 +43,19 @@ class SPECTREDataset(Dataset):
                 )
             }
             data_len = len(data)
-            logger.info(f'[SPECTREDataset] Requiring the following items to be present: {self.requires}')
+            logger.info(f'[MARINADataset] Requiring the following items to be present: {self.requires}')
             data = {
                 idx: entry for idx, entry in data.items()
                 if all(entry[f'has_{dtype}'] for dtype in self.requires)
             }
-            logger.info(f'[SPECTREDataset] Purged {data_len - len(data)}/{data_len} items. {len(data)} items remain')
-            print(f'[SPECTREDataset] Dataset size: {len(data)}')
+            logger.info(f'[MARINADataset] Purged {data_len - len(data)}/{data_len} items. {len(data)} items remain')
+            print(f'[MARINADataset] Dataset size: {len(data)}')
             if args.debug and len(data) > DEBUG_LEN:
-                logger.info(f'[SPECTREDataset] Debug mode activated. Data length set to {DEBUG_LEN}')
+                logger.info(f'[MARINADataset] Debug mode activated. Data length set to {DEBUG_LEN}')
                 data = dict(islice(data.items(), DEBUG_LEN))
 
             if len(data) == 0:
-                raise RuntimeError(f'[SPECTREDataset] Dataset split {split} is empty!')
+                raise RuntimeError(f'[MARINADataset] Dataset split {split} is empty!')
             
             self.jittering = args.jittering
             self.spectral_loader = SpectralInputLoader(DATASET_ROOT, data)
@@ -70,11 +70,11 @@ class SPECTREDataset(Dataset):
             else:
                 self.drop_scheduler = None
 
-            logger.info('[SPECTREDataset] Setup complete!')
+            logger.info('[MARINADataset] Setup complete!')
         
         except Exception:
             logger.error(traceback.format_exc())
-            logger.error('[SPECTREDataset] While instantiating the dataset, ran into the above error.')
+            logger.error('[MARINADataset] While instantiating the dataset, ran into the above error.')
             sys.exit(1)
     
     def __len__(self):
@@ -204,8 +204,8 @@ def collate(batch):
     
     return batch_inputs, batch_fps
 
-class SPECTREDataModule(pl.LightningDataModule):
-    def __init__(self, args: SPECTREArgs, fp_loader: FPLoader):
+class MARINADataModule(pl.LightningDataModule):
+    def __init__(self, args: MARINAArgs, fp_loader: FPLoader):
         super().__init__()
         self.args = args
         self.batch_size = args.batch_size
@@ -223,11 +223,11 @@ class SPECTREDataModule(pl.LightningDataModule):
     
     def setup(self, stage):
         if (stage == "fit" or stage == "validate" or stage is None) and not self._fit_is_setup:
-            self.train = SPECTREDataset(self.args, self.fp_loader, split='train')
-            self.val = [SPECTREDataset(self.args, self.fp_loader, split='val', override_input_types=input_type) for input_type in self.test_types]
+            self.train = MARINADataset(self.args, self.fp_loader, split='train')
+            self.val = [MARINADataset(self.args, self.fp_loader, split='val', override_input_types=input_type) for input_type in self.test_types]
             self._fit_is_setup = True
         if (stage == "test") and not self._test_is_setup:
-            self.test = [SPECTREDataset(self.args, self.fp_loader, split='test', override_input_types=input_type) for input_type in self.test_types]
+            self.test = [MARINADataset(self.args, self.fp_loader, split='test', override_input_types=input_type) for input_type in self.test_types]
             self._test_is_setup = True
         if stage == "predict":
             raise NotImplementedError("Predict setup not implemented")

@@ -7,8 +7,8 @@ import torch
 import torch.nn.functional as F
 import os
 
-from src.settings import SPECTREArgs
-from src.model import SPECTRE
+from src.settings import MARINAArgs
+from src.model import MARINA
 from src.fp_loader import make_fp_loader
 from src.data import collate
 from src.ranker import RankingSet
@@ -16,7 +16,7 @@ from src.ranker import RankingSet
 logger = logging.getLogger(__name__)
 _model_lock = threading.Lock()
 _model: Optional[torch.nn.Module] = None
-_args: Optional[SPECTREArgs] = None
+_args: Optional[MARINAArgs] = None
 _fp_loader = None
 _rankingset_cache = None  # Cache the rankingset to avoid reloading
 
@@ -51,13 +51,13 @@ def load_model(ckpt_path: str = "data/best.ckpt", params_path: str = "data/param
     logger.info("Loading model params from %s", params_path)
     with open(params_path, "r") as f:
         params = json.load(f)
-    _args = SPECTREArgs(**params)
+    _args = MARINAArgs(**params)
 
     # create fp loader according to args
     _fp_loader = make_fp_loader(_args.fp_type, entropy_out_dim=_args.out_dim)
 
-    logger.info("Instantiating SPECTRE model")
-    model = SPECTRE(_args, _fp_loader)
+    logger.info("Instantiating MARINA model")
+    model = MARINA(_args, _fp_loader)
 
     logger.info("Loading checkpoint from %s (cpu)", ckpt_path)
     ckpt = torch.load(ckpt_path, map_location="cpu")

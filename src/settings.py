@@ -3,9 +3,9 @@ from pydantic.dataclasses import dataclass
 from dataclasses import field
 
 @dataclass
-class SPECTREArgs:
+class MARINAArgs:
     experiment_name: str = 'marina-development'
-    project_name: str = 'SPECTRE'
+    project_name: str = 'MARINA'
     seed: int = 0
     load_from_checkpoint: str | None = None
     train: bool = True

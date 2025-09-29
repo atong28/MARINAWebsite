@@ -1,11 +1,11 @@
 #!/bin/bash
 
-# SPECTRE Docker Restart Script
+# MARINA Docker Restart Script
 # This script performs a hard restart of the Docker containers with logs
 
 set -e
 
-echo "🔄 SPECTRE Docker Restart Script"
+echo "🔄 MARINA Docker Restart Script"
 echo "================================="
 
 # Colors for output

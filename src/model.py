@@ -4,7 +4,7 @@ import torch
 import torch.nn as nn
 import torch.distributed as dist
 
-from src.settings import SPECTREArgs
+from src.settings import MARINAArgs
 from src.ranker import RankingSet
 from src.fp_loader import FPLoader
 from src.encoder import build_encoder
@@ -50,15 +50,15 @@ class CrossAttentionBlock(nn.Module):
         out = self.norm2(q1 + ff_out)
         return out
 
-class SPECTRE(pl.LightningModule):
-    def __init__(self, args: SPECTREArgs, fp_loader: FPLoader):
+class MARINA(pl.LightningModule):
+    def __init__(self, args: MARINAArgs, fp_loader: FPLoader):
         super().__init__()
         
         self.args = args
         self.fp_loader = fp_loader
         
         if self.global_rank == 0:
-            logger.info("[SPECTRE] Started Initializing")
+            logger.info("[MARINA] Started Initializing")
 
         self.fp_length = args.out_dim
         self.out_dim = args.out_dim
@@ -136,7 +136,7 @@ class SPECTRE(pl.LightningModule):
         self.ranker = None
         
         if self.global_rank == 0:
-            logger.info("[SPECTRE] Initialized")
+            logger.info("[MARINA] Initialized")
         
     def forward(self, batch, batch_idx=None, return_representations=False):
         # Handle empty batch case

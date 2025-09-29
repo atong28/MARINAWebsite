@@ -4,7 +4,7 @@ from dataclasses import field
 
 @dataclass
 class SPECTREArgs:
-    experiment_name: str = 'spectre-development'
+    experiment_name: str = 'marina-development'
     project_name: str = 'SPECTRE'
     seed: int = 0
     load_from_checkpoint: str | None = None

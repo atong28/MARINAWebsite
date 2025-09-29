@@ -1,4 +1,4 @@
-# spectre/arch/attention.py
+# marina/arch/attention.py
 from __future__ import annotations
 import math
 from typing import Optional, Tuple

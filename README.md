@@ -54,7 +54,7 @@ The system uses a transformer-based architecture with cross-attention mechanisms
 
 1. **Build the Docker image:**
    ```bash
-   docker build -t spectre-predictor:latest .
+   docker build -t marina-predictor:latest .
    ```
 
 2. **Run with Docker Compose:**

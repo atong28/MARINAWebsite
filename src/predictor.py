@@ -29,7 +29,7 @@ def _strip_removed_keys(state_dict: Dict[str, Any]) -> Dict[str, Any]:
 
 def _try_normalize_prefixes(sd: Dict[str, Any], model: torch.nn.Module) -> Dict[str, Any]:
     # Try common lightning prefixes
-    prefixes = ("model.", "spectre.", "net.")
+    prefixes = ("model.", "marina.", "net.")
     model_keys = set(model.state_dict().keys())
     for p in prefixes:
         if any(k.startswith(p) for k in sd.keys()):

@@ -1,10 +1,10 @@
 version: '3'
 services:
-  spectre-predictor:
+  marina-predictor:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: spectre-predictor
+    container_name: marina-predictor
     volumes:
       - ./logs:/app/logs:rw
       - ./data:/app/data:ro

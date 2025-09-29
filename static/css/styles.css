@@ -154,6 +154,72 @@ body {
     overflow: hidden;
 }
 
+/* Compact grid for all inputs on one view */
+.input-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 1rem;
+    padding: 1rem 1.5rem 1.5rem;
+}
+
+@media (min-width: 1100px) {
+    .input-grid {
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+}
+
+.input-card {
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    background: var(--light-bg);
+}
+
+.card-header.compact {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.25rem;
+}
+
+.card-header.compact h3 {
+    font-size: 1rem;
+}
+
+.card-subtitle {
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-bottom: 0.5rem;
+}
+
+.table-controls.compact .btn {
+    padding: 0.25rem 0.5rem;
+}
+
+.btn-sm {
+    padding: 0.25rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+.spreadsheet-input.small {
+    padding: 0.25rem 0.4rem;
+    font-size: 0.85rem;
+}
+
+.spreadsheet-table.compact th,
+.spreadsheet-table.compact td {
+    padding: 0.25rem;
+}
+
+.compact-vis canvas {
+    width: 100%;
+    height: auto;
+}
+
+.mw-input.compact .mw-field.small {
+    width: 140px;
+}
+
 .input-section h2 {
     padding: 1.5rem 2rem 1rem;
     font-size: 1.5rem;

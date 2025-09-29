@@ -14,6 +14,9 @@ class SpreadsheetTable {
         // Add spreadsheet classes
         this.table.classList.add('spreadsheet-table');
         
+        // Make table focusable
+        this.table.setAttribute('tabindex', '0');
+        
         // Make all cells focusable
         this.makeCellsFocusable();
         
@@ -33,6 +36,18 @@ class SpreadsheetTable {
             } else {
                 const input = cell.querySelector('input');
                 input.classList.add('spreadsheet-input');
+                
+                // Add paste event listener directly to each input
+                input.addEventListener('paste', (e) => {
+                    console.log('Input paste event triggered on:', input); // Debug log
+                    e.preventDefault();
+                    e.stopPropagation();
+                    const pastedText = e.clipboardData.getData('text/plain');
+                    console.log('Pasted text from input:', pastedText); // Debug log
+                    if (pastedText) {
+                        this.pasteData(pastedText);
+                    }
+                });
             }
         });
     }
@@ -97,6 +112,18 @@ class SpreadsheetTable {
                 this.navigate(e.shiftKey ? 'left' : 'right');
             }
         });
+        
+        // Add paste event listener to all inputs in the table
+        this.table.addEventListener('paste', (e) => {
+            console.log('Paste event triggered on:', e.target); // Debug log
+            e.preventDefault();
+            e.stopPropagation();
+            const pastedText = e.clipboardData.getData('text/plain');
+            console.log('Pasted text:', pastedText); // Debug log
+            if (pastedText) {
+                this.pasteData(pastedText);
+            }
+        });
     }
     
     addKeyboardShortcuts() {
@@ -154,6 +181,7 @@ class SpreadsheetTable {
                 case 'v':
                     if (e.ctrlKey || e.metaKey) {
                         e.preventDefault();
+                        console.log('Ctrl+V detected, calling pasteSelection');
                         this.pasteSelection();
                     }
                     break;
@@ -315,41 +343,40 @@ class SpreadsheetTable {
         }
         
         if (text) {
-            // Try modern clipboard API first
-            if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
-                navigator.clipboard.writeText(text).then(() => {
-                    this.showMessage('Copied to clipboard', 'success');
-                }).catch((error) => {
-                    console.warn('Clipboard API failed:', error);
-                    this.showFallbackCopyDialog(text);
-                });
-            } else {
-                // Fallback for non-secure contexts
-                this.showFallbackCopyDialog(text);
-            }
+            // Use the reliable document.execCommand approach first
+            this.showFallbackCopyDialog(text);
         }
     }
     
     pasteSelection() {
-        // Check if clipboard API is available and we're in a secure context
-        if (navigator.clipboard && navigator.clipboard.readText && window.isSecureContext) {
+        // Try to get clipboard data directly
+        if (navigator.clipboard && navigator.clipboard.readText) {
             navigator.clipboard.readText().then(text => {
+                console.log('Clipboard API success, text:', text);
                 this.pasteData(text);
-            }).catch((error) => {
-                console.warn('Clipboard API failed:', error);
-                this.showFallbackPasteDialog();
+            }).catch(err => {
+                console.log('Clipboard API failed:', err);
+                this.showPasteDialog();
             });
         } else {
-            // Fallback for non-secure contexts or when clipboard API is not available
-            this.showFallbackPasteDialog();
+            console.log('Clipboard API not available, showing dialog');
+            this.showPasteDialog();
         }
     }
     
-    showFallbackPasteDialog() {
+    showPasteDialog() {
         const text = prompt('Paste your data here (tab-separated values):');
-        if (text !== null && text.trim()) {
+        if (text && text.trim()) {
+            console.log('Dialog paste text:', text);
             this.pasteData(text);
         }
+    }
+    
+    // Test function to manually trigger paste with sample data
+    testPaste() {
+        const testData = "7.2\t120.5\t1.0\n7.5\t125.0\t0.8\n8.1\t130.2\t1.2";
+        console.log('Testing paste with data:', testData);
+        this.pasteData(testData);
     }
     
     showFallbackCopyDialog(text) {
@@ -365,55 +392,130 @@ class SpreadsheetTable {
         
         try {
             const successful = document.execCommand('copy');
-            if (successful) {
-                this.showMessage('Copied to clipboard', 'success');
-            } else {
-                this.showMessage('Please copy manually: ' + text.substring(0, 100) + (text.length > 100 ? '...' : ''), 'error');
-            }
+            // Silent copy - no popup messages
         } catch (err) {
-            this.showMessage('Please copy manually: ' + text.substring(0, 100) + (text.length > 100 ? '...' : ''), 'error');
+            // Silent fallback - no popup messages
         }
         
         document.body.removeChild(textarea);
     }
     
     pasteData(text) {
+        console.log('Paste data called with:', text); // Debug log
         const lines = text.trim().split('\n');
-        const data = lines.map(line => line.split('\t'));
+        const data = lines.map(line => line.split(/[\t,;]/).map(v => v.trim().replace(/\r/g, ''))); // Handle various separators and remove \r
+        
+        const tableId = this.table.id.replace('-table', '');
+        const tbody = this.table.querySelector('tbody');
+        
+        // Determine how many columns this table expects
+        let expectedCols;
+        switch (tableId) {
+            case 'hsqc':
+                expectedCols = 3; // H, C, intensity
+                break;
+            case 'mass_spec':
+                expectedCols = 2; // m/z, intensity
+                break;
+            case 'h_nmr':
+            case 'c_nmr':
+                expectedCols = 1; // single value
+                break;
+            default:
+                expectedCols = 1;
+        }
+        
+        // Process data and create rows as needed
+        let currentRowIndex = 0;
+        let currentColIndex = 0;
         
         if (this.selectedRange) {
-            // Paste into selected range
-            const rows = this.table.querySelectorAll('tbody tr');
-            for (let i = 0; i < data.length && (this.selectedRange.minRow + i) < rows.length; i++) {
-                const row = rows[this.selectedRange.minRow + i];
-                const cells = row.querySelectorAll('td');
-                for (let j = 0; j < data[i].length && (this.selectedRange.minCol + j) < cells.length; j++) {
-                    const cell = cells[this.selectedRange.minCol + j];
-                    const input = cell.querySelector('input');
-                    if (input && !input.closest('th')) { // Don't paste into header cells
-                        input.value = data[i][j];
-                    }
-                }
-            }
+            currentRowIndex = this.selectedRange.minRow;
+            currentColIndex = this.selectedRange.minCol;
         } else if (this.currentCell) {
-            // Paste starting from current cell
-            const startPos = this.getCellPosition(this.currentCell);
-            const rows = this.table.querySelectorAll('tbody tr');
-            
-            for (let i = 0; i < data.length && (startPos.row + i) < rows.length; i++) {
-                const row = rows[startPos.row + i];
-                const cells = row.querySelectorAll('td');
-                for (let j = 0; j < data[i].length && (startPos.col + j) < cells.length; j++) {
-                    const cell = cells[startPos.col + j];
-                    const input = cell.querySelector('input');
-                    if (input && !input.closest('th')) {
-                        input.value = data[i][j];
+            const pos = this.getCellPosition(this.currentCell);
+            currentRowIndex = pos.row;
+            currentColIndex = pos.col;
+        }
+        
+        // Flatten data for easier processing
+        const flatData = [];
+        data.forEach(row => {
+            if (tableId === 'hsqc') {
+                // For HSQC, group every 3 values into a row
+                for (let i = 0; i < row.length; i += 3) {
+                    if (i + 2 < row.length) {
+                        flatData.push([row[i], row[i + 1], row[i + 2]]);
                     }
                 }
+            } else if (tableId === 'mass_spec') {
+                // For mass spec, group every 2 values into a row
+                for (let i = 0; i < row.length; i += 2) {
+                    if (i + 1 < row.length) {
+                        flatData.push([row[i], row[i + 1]]);
+                    }
+                }
+            } else {
+                // For single column data, each value is a row
+                row.forEach(value => {
+                    if (value) flatData.push([value]);
+                });
+            }
+        });
+        
+        // Ensure we have enough rows
+        while (tbody.children.length <= currentRowIndex + flatData.length - 1) {
+            // Add new row using the global addRow function
+            if (typeof addRow === 'function') {
+                addRow(tableId);
+            } else {
+                // Fallback: create a simple row
+                const newRow = document.createElement('tr');
+                for (let i = 0; i < expectedCols; i++) {
+                    const cell = document.createElement('td');
+                    const input = document.createElement('input');
+                    input.type = 'number';
+                    input.step = '0.01';
+                    input.className = 'spreadsheet-input small';
+                    cell.appendChild(input);
+                    newRow.appendChild(cell);
+                }
+                // Add remove button
+                const removeCell = document.createElement('td');
+                const removeBtn = document.createElement('button');
+                removeBtn.className = 'btn-icon';
+                removeBtn.onclick = function() { removeRow(this); };
+                removeBtn.title = 'Remove';
+                removeBtn.innerHTML = '<i class="fas fa-times"></i>';
+                removeCell.appendChild(removeBtn);
+                newRow.appendChild(removeCell);
+                tbody.appendChild(newRow);
             }
         }
         
-        this.showMessage('Data pasted', 'success');
+        // Fill the data
+        flatData.forEach((rowData, dataIndex) => {
+            const targetRowIndex = currentRowIndex + dataIndex;
+            if (targetRowIndex < tbody.children.length) {
+                const row = tbody.children[targetRowIndex];
+                const inputs = row.querySelectorAll('input');
+                
+                rowData.forEach((value, colIndex) => {
+                    if (inputs[colIndex] && value) {
+                        // Clean the value and validate it's a number
+                        const cleanValue = value.replace(/[^\d.-]/g, '');
+                        if (cleanValue && !isNaN(parseFloat(cleanValue))) {
+                            inputs[colIndex].value = cleanValue;
+                        }
+                    }
+                });
+            }
+        });
+        
+        // Update input summary if the function exists
+        if (typeof updateInputSummary === 'function') {
+            updateInputSummary();
+        }
     }
     
     showMessage(message, type) {
@@ -438,6 +540,8 @@ class SpreadsheetTable {
             messageEl.style.backgroundColor = '#10b981';
         } else if (type === 'error') {
             messageEl.style.backgroundColor = '#ef4444';
+        } else if (type === 'info') {
+            messageEl.style.backgroundColor = '#3b82f6';
         }
         
         document.body.appendChild(messageEl);
@@ -459,11 +563,48 @@ class SpreadsheetTable {
 
 // Initialize spreadsheet functionality for all tables
 document.addEventListener('DOMContentLoaded', function() {
+    console.log('Initializing spreadsheet tables...'); // Debug log
     // Initialize spreadsheet for all data tables
     const tableIds = ['hsqc-table', 'h_nmr-table', 'c_nmr-table', 'mass_spec-table'];
+    const spreadsheetTables = [];
+    
     tableIds.forEach(tableId => {
         if (document.getElementById(tableId)) {
-            new SpreadsheetTable(tableId);
+            console.log('Creating spreadsheet table for:', tableId); // Debug log
+            const table = new SpreadsheetTable(tableId);
+            spreadsheetTables.push(table);
+            
+            // Make test function globally accessible
+            window[`testPaste_${tableId.replace('-table', '')}`] = () => table.testPaste();
+        }
+    });
+    
+    console.log('Spreadsheet tables initialized:', spreadsheetTables.length); // Debug log
+    
+    // Add document-level paste handler for better coverage
+    document.addEventListener('paste', function(e) {
+        console.log('Document paste event triggered, active element:', document.activeElement); // Debug log
+        // Check if the paste is happening in one of our tables
+        const activeElement = document.activeElement;
+        let targetTable = null;
+        
+        for (const table of spreadsheetTables) {
+            if (table.table.contains(activeElement) || 
+                (activeElement.tagName === 'INPUT' && table.table.contains(activeElement))) {
+                targetTable = table;
+                console.log('Found target table:', table.table.id); // Debug log
+                break;
+            }
+        }
+        
+        if (targetTable) {
+            e.preventDefault();
+            e.stopPropagation();
+            const pastedText = e.clipboardData.getData('text/plain');
+            if (pastedText) {
+                console.log('Calling pasteData with:', pastedText); // Debug log
+                targetTable.pasteData(pastedText);
+            }
         }
     });
 });

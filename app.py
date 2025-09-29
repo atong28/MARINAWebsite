@@ -29,9 +29,8 @@ CORS(app)  # Enable CORS for all routes
 # Add security headers to enable clipboard access
 @app.after_request
 def after_request(response):
-    # Enable clipboard access by setting appropriate headers
+    # Enable clipboard access by setting appropriate headers (use only Permissions-Policy)
     response.headers['Permissions-Policy'] = 'clipboard-read=*, clipboard-write=*'
-    response.headers['Feature-Policy'] = 'clipboard-read *; clipboard-write *'
     # Allow clipboard access in iframe if needed
     response.headers['X-Frame-Options'] = 'SAMEORIGIN'
     return response

@@ -297,6 +297,42 @@ function parseAndFillTable(tableId, text) {
     });
 }
 
+// HSQC column swapping
+function swapHSQCColumns() {
+    const table = document.getElementById('hsqc-table');
+    const hCol = table.querySelector('.hsqc-h-col');
+    const cCol = table.querySelector('.hsqc-c-col');
+    
+    // Swap headers
+    const hText = hCol.textContent;
+    const cText = cCol.textContent;
+    hCol.textContent = cText;
+    cCol.textContent = hText;
+    
+    // Swap column classes
+    hCol.classList.toggle('swapped');
+    cCol.classList.toggle('swapped');
+    
+    // Swap data in all rows
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 3) {
+            const hInput = cells[0].querySelector('input');
+            const cInput = cells[1].querySelector('input');
+            
+            const hValue = hInput.value;
+            const cValue = cInput.value;
+            
+            hInput.value = cValue;
+            cInput.value = hValue;
+        }
+    });
+    
+    // Update input summary
+    updateInputSummary();
+}
+
 // Show message to user
 function showMessage(message, type = 'info') {
     const messageDiv = document.createElement('div');

@@ -1,0 +1,5 @@
+.env# pixi environments
+.pixi/*
+!.pixi/config.toml
+.vscode/*
+data/*

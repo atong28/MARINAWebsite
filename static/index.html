@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MARINA Molecular Structure Prediction</title>
+    <link rel="stylesheet" href="/static/css/styles.css">
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+  </head>
+  <body>
+    <div class="container">
+        <header class="header">
+            <h1><i class="fas fa-flask"></i> MARINA Molecular Structure Prediction</h1>
+            <p class="subtitle">Predict molecular structures from spectral data using deep learning</p>
+            <div id="backend-status" class="backend-status">
+                <i class="fas fa-circle status-indicator"></i>
+                <span class="status-text">Checking backend...</span>
+            </div>
+            <button class="btn btn-info btn-help" onclick="toggleHelp()">
+                <i class="fas fa-question-circle"></i> Help & Documentation
+            </button>
+        </header>
+
+        <!-- Help Section -->
+        <div id="help-section" class="help-section" style="display: none;">
+            <div class="help-content">
+                <h2><i class="fas fa-book"></i> How to Use MARINA</h2>
+                
+                <div class="help-tabs">
+                    <button class="help-tab active" onclick="switchHelpTab('overview')">Overview</button>
+                    <button class="help-tab" onclick="switchHelpTab('spectral')">Spectral Data</button>
+                    <button class="help-tab" onclick="switchHelpTab('smiles')">SMILES Search</button>
+                    <button class="help-tab" onclick="switchHelpTab('results')">Results</button>
+                </div>
+
+                <div id="overview-help" class="help-tab-content active">
+                    <h3>Getting Started</h3>
+                    <p>MARINA uses deep learning to predict molecular structures from spectral data. You can input various types of spectroscopic data to get structure predictions.</p>
+                    
+                    <h4>Workflow:</h4>
+                    <ol>
+                        <li><strong>Enter Spectral Data:</strong> Input HSQC NMR, H NMR, C NMR, Mass Spec, or Molecular Weight data</li>
+                        <li><strong>Review Input Summary:</strong> Check what data you've entered before predicting</li>
+                        <li><strong>Predict Structure:</strong> Click "Predict Structure" to get molecular structure predictions</li>
+                        <li><strong>Analyze Results:</strong> Review the predicted structures and their similarity scores</li>
+                    </ol>
+                </div>
+
+                <div id="spectral-help" class="help-tab-content">
+                    <h3>Spectral Data Input</h3>
+                    
+                    <h4>HSQC NMR:</h4>
+                    <ul>
+                        <li>Enter H-1 chemical shift (ppm), C-13 chemical shift (ppm), and intensity values</li>
+                        <li>Each row represents one HSQC correlation</li>
+                        <li>Use the "Swap H↔C" button if your data has C-13 and H-1 in different columns</li>
+                    </ul>
+
+                    <h4>H NMR:</h4>
+                    <ul>
+                        <li>Enter H-1 chemical shift values in ppm</li>
+                        <li>One value per row</li>
+                    </ul>
+
+                    <h4>C NMR:</h4>
+                    <ul>
+                        <li>Enter C-13 chemical shift values in ppm</li>
+                        <li>One value per row</li>
+                    </ul>
+
+                    <h4>Mass Spectrometry:</h4>
+                    <ul>
+                        <li>Enter m/z and intensity values</li>
+                        <li>Each row represents one mass peak</li>
+                    </ul>
+
+                    <h4>Molecular Weight:</h4>
+                    <ul>
+                        <li>Enter the molecular weight in g/mol</li>
+                        <li>Optional but can improve prediction accuracy</li>
+                    </ul>
+                </div>
+
+                <div id="smiles-help" class="help-tab-content">
+                    <h3>SMILES Search</h3>
+                    <p>The SMILES search allows you to find similar molecules in the database using a SMILES string.</p>
+                    
+                    <h4>How to Use:</h4>
+                    <ul>
+                        <li>Enter a valid SMILES string in the search box</li>
+                        <li>Click "Search" to find similar molecules</li>
+                        <li>Results show molecular structures, SMILES, and similarity scores</li>
+                    </ul>
+
+                    <h4>Example SMILES:</h4>
+                    <ul>
+                        <li><code>CCO</code> - Ethanol</li>
+                        <li><code>CC(=O)O</code> - Acetic acid</li>
+                        <li><code>C1=CC=CC=C1</code> - Benzene</li>
+                        <li><code>CC(C)O</code> - Isopropanol</li>
+                    </ul>
+                </div>
+
+                <div id="results-help" class="help-tab-content">
+                    <h3>Understanding Results</h3>
+                    
+                    <h4>Similarity Scores:</h4>
+                    <ul>
+                        <li>Scores range from 0% to 100%</li>
+                        <li>Higher scores indicate more similar molecular structures</li>
+                        <li>Scores are based on molecular fingerprint similarity</li>
+                    </ul>
+
+                    <h4>Molecular Structures:</h4>
+                    <ul>
+                        <li>Each result shows the 2D molecular structure</li>
+                        <li>Molecular formula and molecular weight are displayed</li>
+                        <li>SMILES strings are provided for each structure</li>
+                    </ul>
+
+                    <h4>Tips for Better Results:</h4>
+                    <ul>
+                        <li>Provide as much spectral data as possible</li>
+                        <li>Ensure chemical shift values are accurate</li>
+                        <li>Include molecular weight when available</li>
+                        <li>Try different combinations of spectral data</li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="main-content">
+            <!-- Spectral Data Input Section -->
+            <div class="input-section">
+                <h2><i class="fas fa-chart-line"></i> Spectral Data Input</h2>
+                
+                <div class="input-tabs">
+                    <button class="tab-button active" onclick="switchTab('hsqc')">
+                        <i class="fas fa-atom"></i> HSQC NMR
+                    </button>
+                    <button class="tab-button" onclick="switchTab('h_nmr')">
+                        <i class="fas fa-wave-square"></i> H NMR
+                    </button>
+                    <button class="tab-button" onclick="switchTab('c_nmr')">
+                        <i class="fas fa-wave-square"></i> C NMR
+                    </button>
+                    <button class="tab-button" onclick="switchTab('mass_spec')">
+                        <i class="fas fa-chart-bar"></i> Mass Spec
+                    </button>
+                    <button class="tab-button" onclick="switchTab('mw')">
+                        <i class="fas fa-weight"></i> Molecular Weight
+                    </button>
+                </div>
+
+                <!-- HSQC NMR Tab -->
+                <div id="hsqc-tab" class="tab-content active">
+                    <div class="tab-header">
+                        <h3>HSQC NMR Data</h3>
+                        <p>Enter C-13 chemical shift, H-1 chemical shift, and intensity values</p>
+                        <div class="table-controls">
+                            <button class="btn btn-primary" onclick="addRow('hsqc')">
+                                <i class="fas fa-plus"></i> Add Row
+                            </button>
+                            <button class="btn btn-secondary" onclick="clearTable('hsqc')">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                            <button class="btn btn-info" onclick="pasteFromClipboard('hsqc')">
+                                <i class="fas fa-paste"></i> Paste from Clipboard
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <div class="hsqc-controls">
+                            <button class="btn btn-secondary" onclick="swapHSQCColumns()">
+                                <i class="fas fa-exchange-alt"></i> Swap H↔C
+                            </button>
+                        </div>
+                        <table id="hsqc-table" class="data-table spreadsheet-table">
+                            <thead>
+                                <tr>
+                                    <th class="hsqc-h-col">H-1 Shift (ppm)</th>
+                                    <th class="hsqc-c-col">C-13 Shift (ppm)</th>
+                                    <th>Intensity</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="number" step="0.01" placeholder="e.g., 7.2" class="spreadsheet-input"></td>
+                                    <td><input type="number" step="0.01" placeholder="e.g., 120.5" class="spreadsheet-input"></td>
+                                    <td><input type="number" step="0.01" placeholder="e.g., 1.0" class="spreadsheet-input"></td>
+                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove row"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div id="hsqc-visualization" class="spectrum-visualization">
+                            <canvas id="hsqc-canvas" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- H NMR Tab -->
+                <div id="h_nmr-tab" class="tab-content">
+                    <div class="tab-header">
+                        <h3>H NMR Data</h3>
+                        <p>Enter H-1 chemical shift values</p>
+                        <div class="table-controls">
+                            <button class="btn btn-primary" onclick="addRow('h_nmr')">
+                                <i class="fas fa-plus"></i> Add Row
+                            </button>
+                            <button class="btn btn-secondary" onclick="clearTable('h_nmr')">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                            <button class="btn btn-info" onclick="pasteFromClipboard('h_nmr')">
+                                <i class="fas fa-paste"></i> Paste from Clipboard
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="h_nmr-table" class="data-table spreadsheet-table">
+                            <thead>
+                                <tr>
+                                    <th>H-1 Shift (ppm)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="number" step="0.01" placeholder="e.g., 7.2" class="spreadsheet-input"></td>
+                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove row"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div id="h_nmr-visualization" class="spectrum-visualization">
+                            <canvas id="h_nmr-canvas" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- C NMR Tab -->
+                <div id="c_nmr-tab" class="tab-content">
+                    <div class="tab-header">
+                        <h3>C NMR Data</h3>
+                        <p>Enter C-13 chemical shift values</p>
+                        <div class="table-controls">
+                            <button class="btn btn-primary" onclick="addRow('c_nmr')">
+                                <i class="fas fa-plus"></i> Add Row
+                            </button>
+                            <button class="btn btn-secondary" onclick="clearTable('c_nmr')">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                            <button class="btn btn-info" onclick="pasteFromClipboard('c_nmr')">
+                                <i class="fas fa-paste"></i> Paste from Clipboard
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="c_nmr-table" class="data-table spreadsheet-table">
+                            <thead>
+                                <tr>
+                                    <th>C-13 Shift (ppm)</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="number" step="0.01" placeholder="e.g., 120.5" class="spreadsheet-input"></td>
+                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove row"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div id="c_nmr-visualization" class="spectrum-visualization">
+                            <canvas id="c_nmr-canvas" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Mass Spec Tab -->
+                <div id="mass_spec-tab" class="tab-content">
+                    <div class="tab-header">
+                        <h3>Mass Spectrometry Data</h3>
+                        <p>Enter m/z and intensity values</p>
+                        <div class="table-controls">
+                            <button class="btn btn-primary" onclick="addRow('mass_spec')">
+                                <i class="fas fa-plus"></i> Add Row
+                            </button>
+                            <button class="btn btn-secondary" onclick="clearTable('mass_spec')">
+                                <i class="fas fa-trash"></i> Clear
+                            </button>
+                            <button class="btn btn-info" onclick="pasteFromClipboard('mass_spec')">
+                                <i class="fas fa-paste"></i> Paste from Clipboard
+                            </button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table id="mass_spec-table" class="data-table spreadsheet-table">
+                            <thead>
+                                <tr>
+                                    <th>m/z</th>
+                                    <th>Intensity</th>
+                                    <th>Actions</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td><input type="number" step="0.01" placeholder="e.g., 180.5" class="spreadsheet-input"></td>
+                                    <td><input type="number" step="0.01" placeholder="e.g., 1000" class="spreadsheet-input"></td>
+                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove row"><i class="fas fa-times"></i></button></td>
+                                </tr>
+                            </tbody>
+                        </table>
+                        <div id="mass_spec-visualization" class="spectrum-visualization">
+                            <canvas id="mass_spec-canvas" width="400" height="200"></canvas>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Molecular Weight Tab -->
+                <div id="mw-tab" class="tab-content">
+                    <div class="tab-header">
+                        <h3>Molecular Weight</h3>
+                        <p>Enter the molecular weight of the compound</p>
+                    </div>
+                    <div class="mw-input">
+                        <input type="number" id="mw-input" step="0.01" placeholder="e.g., 180.16" class="mw-field">
+                        <span class="unit">g/mol</span>
+                    </div>
+                </div>
+
+            </div>
+
+            <!-- Prediction Controls Section -->
+            <div class="controls-section">
+                <div class="prediction-controls">
+                    <div class="input-summary">
+                        <h3><i class="fas fa-info-circle"></i> Input Summary</h3>
+                        <div id="input-summary-content" class="input-summary-content">
+                            <p class="no-inputs">No spectral data entered yet</p>
+                        </div>
+                    </div>
+                    
+                    <div class="control-group">
+                        <label for="top-k">Number of Results:</label>
+                        <select id="top-k">
+                            <option value="5">5</option>
+                            <option value="10" selected>10</option>
+                            <option value="20">20</option>
+                            <option value="50">50</option>
+                        </select>
+                    </div>
+                    
+                    <button id="predict-btn" class="btn btn-success btn-large" onclick="runPrediction()">
+                        <i class="fas fa-play"></i> Predict Structure
+                    </button>
+                </div>
+            </div>
+
+            <!-- SMILES Search Section (Separated) -->
+            <div class="smiles-section">
+                <h2><i class="fas fa-search"></i> SMILES Search</h2>
+                <p class="section-description">Search for similar molecules using a SMILES string</p>
+                
+                <div class="smiles-search">
+                    <div class="search-input-group">
+                        <input type="text" id="smiles-input" placeholder="e.g., CCO (ethanol)" class="smiles-field">
+                        <button class="btn btn-primary" onclick="runSmilesSearch()">
+                            <i class="fas fa-search"></i> Search
+                        </button>
+                    </div>
+                    <div class="smiles-info">
+                        <p><strong>Example SMILES:</strong></p>
+                        <ul>
+                            <li><code>CCO</code> - Ethanol</li>
+                            <li><code>CC(=O)O</code> - Acetic acid</li>
+                            <li><code>C1=CC=CC=C1</code> - Benzene</li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+
+            <div id="results-section" class="results-section" style="display: none;">
+                <h2><i class="fas fa-chart-bar"></i> Prediction Results</h2>
+                <div id="loading" class="loading" style="display: none;">
+                    <div class="spinner"></div>
+                    <p>Running prediction...</p>
+                </div>
+                <div id="results-grid" class="results-grid"></div>
+            </div>
+        </div>
+    </div>
+
+    <script src="/static/js/spreadsheet.js"></script>
+    <script src="/static/js/visualization.js"></script>
+    <script src="/static/js/app.js"></script>
+  </body>
+</html>

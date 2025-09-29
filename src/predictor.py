@@ -118,6 +118,7 @@ def predict_from_raw(raw_inputs: Dict[str, Any], k: int = 5):
                     # Mass spec: [mz1, intensity1, mz2, intensity2, ...]
                     if len(v) % 2 == 0:
                         tensor = tensor.view(-1, 2)
+                        tensor = F.pad(tensor, (0, 1), "constant", 0)  # -> (N,3)
                     else:
                         logger.warning(f"Mass spec data length {len(v)} is not divisible by 2, skipping")
                         continue

@@ -81,7 +81,7 @@ class SpectralInputLoader:
         filename = f'{idx}.pt'
         mass_spec: torch.Tensor = torch.load(os.path.join(self.root, 'MassSpec', filename), **self.kwargs)
         mass_spec = mass_spec.to(dtype=self.dtype)
-        mass_spec = F.pad(mass_spec, (0,1), "constant", 0)
+        mass_spec = F.pad(mass_spec, (0,1), "constant", 0)  # (N,2) -> (N,3)
         if jittering > 0:
             noise = torch.zeros_like(mass_spec)
             noise[:, 0] = torch.randn_like(mass_spec[:, 0]) * mass_spec[:, 0] / 100_000  # jitter m/z

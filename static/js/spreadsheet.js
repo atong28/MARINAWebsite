@@ -315,20 +315,66 @@ class SpreadsheetTable {
         }
         
         if (text) {
-            navigator.clipboard.writeText(text).then(() => {
-                this.showMessage('Copied to clipboard', 'success');
-            }).catch(() => {
-                this.showMessage('Failed to copy to clipboard', 'error');
-            });
+            // Try modern clipboard API first
+            if (navigator.clipboard && navigator.clipboard.writeText && window.isSecureContext) {
+                navigator.clipboard.writeText(text).then(() => {
+                    this.showMessage('Copied to clipboard', 'success');
+                }).catch((error) => {
+                    console.warn('Clipboard API failed:', error);
+                    this.showFallbackCopyDialog(text);
+                });
+            } else {
+                // Fallback for non-secure contexts
+                this.showFallbackCopyDialog(text);
+            }
         }
     }
     
     pasteSelection() {
-        navigator.clipboard.readText().then(text => {
+        // Check if clipboard API is available and we're in a secure context
+        if (navigator.clipboard && navigator.clipboard.readText && window.isSecureContext) {
+            navigator.clipboard.readText().then(text => {
+                this.pasteData(text);
+            }).catch((error) => {
+                console.warn('Clipboard API failed:', error);
+                this.showFallbackPasteDialog();
+            });
+        } else {
+            // Fallback for non-secure contexts or when clipboard API is not available
+            this.showFallbackPasteDialog();
+        }
+    }
+    
+    showFallbackPasteDialog() {
+        const text = prompt('Paste your data here (tab-separated values):');
+        if (text !== null && text.trim()) {
             this.pasteData(text);
-        }).catch(() => {
-            this.showMessage('Failed to read from clipboard', 'error');
-        });
+        }
+    }
+    
+    showFallbackCopyDialog(text) {
+        // Create a temporary textarea to select and copy text
+        const textarea = document.createElement('textarea');
+        textarea.value = text;
+        textarea.style.position = 'fixed';
+        textarea.style.left = '-999999px';
+        textarea.style.top = '-999999px';
+        document.body.appendChild(textarea);
+        textarea.focus();
+        textarea.select();
+        
+        try {
+            const successful = document.execCommand('copy');
+            if (successful) {
+                this.showMessage('Copied to clipboard', 'success');
+            } else {
+                this.showMessage('Please copy manually: ' + text.substring(0, 100) + (text.length > 100 ? '...' : ''), 'error');
+            }
+        } catch (err) {
+            this.showMessage('Please copy manually: ' + text.substring(0, 100) + (text.length > 100 ? '...' : ''), 'error');
+        }
+        
+        document.body.removeChild(textarea);
     }
     
     pasteData(text) {

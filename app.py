@@ -9,6 +9,7 @@ import threading
 import time
 
 from flask import Flask, jsonify, request, send_from_directory
+from flask_cors import CORS
 
 from src.fp_loader import EntropyFPLoader
 from src import predictor
@@ -23,6 +24,17 @@ except ImportError:
     RDKIT_AVAILABLE = False
 
 app = Flask(__name__)
+CORS(app)  # Enable CORS for all routes
+
+# Add security headers to enable clipboard access
+@app.after_request
+def after_request(response):
+    # Enable clipboard access by setting appropriate headers
+    response.headers['Permissions-Policy'] = 'clipboard-read=*, clipboard-write=*'
+    response.headers['Feature-Policy'] = 'clipboard-read *; clipboard-write *'
+    # Allow clipboard access in iframe if needed
+    response.headers['X-Frame-Options'] = 'SAMEORIGIN'
+    return response
 
 # Initialize production logging (minimal noise, write to logs/)
 os.makedirs("logs", exist_ok=True)

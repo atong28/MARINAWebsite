@@ -3,14 +3,14 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>MARINA Molecular Structure Prediction</title>
+    <title>MARINA: Molecular Structure Annotator</title>
     <link rel="stylesheet" href="/static/css/styles.css">
     <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
   </head>
   <body>
     <div class="container">
         <header class="header">
-            <h1><i class="fas fa-flask"></i> MARINA Molecular Structure Prediction</h1>
+            <h1><i class="fas fa-flask"></i> MARINA: Molecular Structure Annotator</h1>
             <p class="subtitle">Predict molecular structures from spectral data using deep learning</p>
             <div id="backend-status" class="backend-status">
                 <i class="fas fa-circle status-indicator"></i>
@@ -133,168 +133,179 @@
             <!-- Spectral Data Input Section -->
             <div class="input-section">
                 <h2><i class="fas fa-chart-line"></i> Spectral Data Input</h2>
-                
-                <div class="input-grid">
-                    <!-- HSQC NMR Card -->
-                    <div class="input-card">
-                        <div class="card-header compact">
-                            <h3><i class="fas fa-atom"></i> HSQC NMR</h3>
-                            <div class="table-controls compact">
-                                <button class="btn btn-primary btn-sm" onclick="addRow('hsqc')" title="Add row">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                                <button class="btn btn-secondary btn-sm" onclick="clearTable('hsqc')" title="Clear">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                                <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('hsqc')" title="Paste">
-                                    <i class="fas fa-paste"></i>
-                                </button>
+
+                <div class="input-help">
+                    <strong class="help-title">Button usage:</strong>
+                    <div class="help-grid">
+                        <div class="help-pair">
+                            <button class="btn btn-primary btn-sm" type="button" disabled><i class="fas fa-plus"></i></button>
+                            <span class="help-label">Add row</span>
+                        </div>
+                        <div class="help-pair">
+                            <button class="btn btn-secondary btn-sm" type="button" disabled><i class="fas fa-trash"></i></button>
+                            <span class="help-label">Clear all rows</span>
+                        </div>
+                        <div class="help-pair">
+                            <button class="btn btn-info btn-sm" type="button" disabled><i class="fas fa-paste"></i></button>
+                            <span class="help-label">Paste from spreadsheet (CSV/TSV)</span>
+                        </div>
+                        <div class="help-pair">
+                            <button class="btn btn-secondary btn-sm" type="button" disabled><i class="fas fa-exchange-alt"></i></button>
+                            <span class="help-label">Swap <span class="chem"><sup>13</sup>C</span> ↔ <span class="chem"><sup>1</sup>H</span> columns</span>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="input-grid-cols">
+                    <!-- Column 1: HSQC on top, Mass Spec below -->
+                    <div class="input-col">
+                        <div class="input-card">
+                            <div class="card-header compact">
+                                <h3><i class="fas fa-atom"></i> HSQC NMR</h3>
+                                <div class="table-controls compact">
+                                    <button class="btn btn-primary btn-sm" onclick="addRow('hsqc')" title="Add row">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="clearTable('hsqc')" title="Clear">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('hsqc')" title="Paste">
+                                        <i class="fas fa-paste"></i>
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="swapHSQCColumns()" title="Swap ^{13}C/ ^1H">
+                                        <i class="fas fa-exchange-alt"></i>
+                                    </button>
+                                </div>
                             </div>
+                            <table id="hsqc-table" class="data-table spreadsheet-table compact">
+                                <thead>
+                                    <tr>
+                                        <th class="hsqc-h-col"><sup>1</sup>H (ppm)</th>
+                                        <th class="hsqc-c-col"><sup>13</sup>C (ppm)</th>
+                                        <th>Intensity</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><input type="number" step="0.01" placeholder="7.2" class="spreadsheet-input small"></td>
+                                        <td><input type="number" step="0.01" placeholder="120.5" class="spreadsheet-input small"></td>
+                                        <td><input type="number" step="0.01" placeholder="1.0" class="spreadsheet-input small"></td>
+                                        <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <p class="card-subtitle">C-13 shift, H-1 shift, intensity</p>
-                        <div class="hsqc-controls">
-                            <button class="btn btn-secondary btn-sm" onclick="swapHSQCColumns()">
-                                <i class="fas fa-exchange-alt"></i> Swap H↔C
-                            </button>
-                        </div>
-                        <table id="hsqc-table" class="data-table spreadsheet-table compact">
-                            <thead>
-                                <tr>
-                                    <th class="hsqc-h-col">H-1 (ppm)</th>
-                                    <th class="hsqc-c-col">C-13 (ppm)</th>
-                                    <th>I</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><input type="number" step="0.01" placeholder="7.2" class="spreadsheet-input small"></td>
-                                    <td><input type="number" step="0.01" placeholder="120.5" class="spreadsheet-input small"></td>
-                                    <td><input type="number" step="0.01" placeholder="1.0" class="spreadsheet-input small"></td>
-                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div id="hsqc-visualization" class="spectrum-visualization compact-vis">
-                            <canvas id="hsqc-canvas" width="320" height="140"></canvas>
+
+                        <div class="input-card">
+                            <div class="card-header compact">
+                                <h3><i class="fas fa-chart-bar"></i> Mass Spec</h3>
+                                <div class="table-controls compact">
+                                    <button class="btn btn-primary btn-sm" onclick="addRow('mass_spec')" title="Add row">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="clearTable('mass_spec')" title="Clear">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('mass_spec')" title="Paste">
+                                        <i class="fas fa-paste"></i>
+                                    </button>
+                                </div>
+                            </div>
+                            <table id="mass_spec-table" class="data-table spreadsheet-table compact">
+                                <thead>
+                                    <tr>
+                                        <th>m/z</th>
+                                        <th>Intensity</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><input type="number" step="0.01" placeholder="180.5" class="spreadsheet-input small"></td>
+                                        <td><input type="number" step="0.01" placeholder="1000" class="spreadsheet-input small"></td>
+                                        <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
 
-                    <!-- H NMR Card -->
-                    <div class="input-card">
-                        <div class="card-header compact">
-                            <h3><i class="fas fa-wave-square"></i> H NMR</h3>
-                            <div class="table-controls compact">
-                                <button class="btn btn-primary btn-sm" onclick="addRow('h_nmr')" title="Add row">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                                <button class="btn btn-secondary btn-sm" onclick="clearTable('h_nmr')" title="Clear">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                                <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('h_nmr')" title="Paste">
-                                    <i class="fas fa-paste"></i>
-                                </button>
+                    <!-- Column 2: C NMR on top, MW below -->
+                    <div class="input-col">
+                        <div class="input-card">
+                            <div class="card-header compact">
+                                <h3><i class="fas fa-wave-square"></i> C NMR</h3>
+                                <div class="table-controls compact">
+                                    <button class="btn btn-primary btn-sm" onclick="addRow('c_nmr')" title="Add row">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="clearTable('c_nmr')" title="Clear">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('c_nmr')" title="Paste">
+                                        <i class="fas fa-paste"></i>
+                                    </button>
+                                </div>
                             </div>
+                            <table id="c_nmr-table" class="data-table spreadsheet-table compact">
+                                <thead>
+                                    <tr>
+                                        <th><sup>13</sup>C (ppm)</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><input type="number" step="0.01" placeholder="120.5" class="spreadsheet-input small"></td>
+                                        <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
-                        <table id="h_nmr-table" class="data-table spreadsheet-table compact">
-                            <thead>
-                                <tr>
-                                    <th>H-1 (ppm)</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><input type="number" step="0.01" placeholder="7.2" class="spreadsheet-input small"></td>
-                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div id="h_nmr-visualization" class="spectrum-visualization compact-vis">
-                            <canvas id="h_nmr-canvas" width="320" height="140"></canvas>
+
+                        <div class="input-card">
+                            <div class="card-header compact">
+                                <h3><i class="fas fa-weight"></i> Molecular Weight</h3>
+                            </div>
+                            <div class="mw-input compact">
+                                <input type="number" id="mw-input" step="0.01" placeholder="180.16" class="mw-field small">
+                                <span class="unit">g/mol</span>
+                            </div>
                         </div>
                     </div>
 
-                    <!-- C NMR Card -->
-                    <div class="input-card">
-                        <div class="card-header compact">
-                            <h3><i class="fas fa-wave-square"></i> C NMR</h3>
-                            <div class="table-controls compact">
-                                <button class="btn btn-primary btn-sm" onclick="addRow('c_nmr')" title="Add row">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                                <button class="btn btn-secondary btn-sm" onclick="clearTable('c_nmr')" title="Clear">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                                <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('c_nmr')" title="Paste">
-                                    <i class="fas fa-paste"></i>
-                                </button>
+                    <!-- Column 3: H NMR -->
+                    <div class="input-col">
+                        <div class="input-card">
+                            <div class="card-header compact">
+                                <h3><i class="fas fa-wave-square"></i> H NMR</h3>
+                                <div class="table-controls compact">
+                                    <button class="btn btn-primary btn-sm" onclick="addRow('h_nmr')" title="Add row">
+                                        <i class="fas fa-plus"></i>
+                                    </button>
+                                    <button class="btn btn-secondary btn-sm" onclick="clearTable('h_nmr')" title="Clear">
+                                        <i class="fas fa-trash"></i>
+                                    </button>
+                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('h_nmr')" title="Paste">
+                                        <i class="fas fa-paste"></i>
+                                    </button>
+                                </div>
                             </div>
-                        </div>
-                        <table id="c_nmr-table" class="data-table spreadsheet-table compact">
-                            <thead>
-                                <tr>
-                                    <th>C-13 (ppm)</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><input type="number" step="0.01" placeholder="120.5" class="spreadsheet-input small"></td>
-                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div id="c_nmr-visualization" class="spectrum-visualization compact-vis">
-                            <canvas id="c_nmr-canvas" width="320" height="140"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- Mass Spec Card -->
-                    <div class="input-card">
-                        <div class="card-header compact">
-                            <h3><i class="fas fa-chart-bar"></i> Mass Spec</h3>
-                            <div class="table-controls compact">
-                                <button class="btn btn-primary btn-sm" onclick="addRow('mass_spec')" title="Add row">
-                                    <i class="fas fa-plus"></i>
-                                </button>
-                                <button class="btn btn-secondary btn-sm" onclick="clearTable('mass_spec')" title="Clear">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                                <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('mass_spec')" title="Paste">
-                                    <i class="fas fa-paste"></i>
-                                </button>
-                            </div>
-                        </div>
-                        <table id="mass_spec-table" class="data-table spreadsheet-table compact">
-                            <thead>
-                                <tr>
-                                    <th>m/z</th>
-                                    <th>I</th>
-                                    <th></th>
-                                </tr>
-                            </thead>
-                            <tbody>
-                                <tr>
-                                    <td><input type="number" step="0.01" placeholder="180.5" class="spreadsheet-input small"></td>
-                                    <td><input type="number" step="0.01" placeholder="1000" class="spreadsheet-input small"></td>
-                                    <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
-                                </tr>
-                            </tbody>
-                        </table>
-                        <div id="mass_spec-visualization" class="spectrum-visualization compact-vis">
-                            <canvas id="mass_spec-canvas" width="320" height="140"></canvas>
-                        </div>
-                    </div>
-
-                    <!-- Molecular Weight Card -->
-                    <div class="input-card">
-                        <div class="card-header compact">
-                            <h3><i class="fas fa-weight"></i> Molecular Weight</h3>
-                        </div>
-                        <div class="mw-input compact">
-                            <input type="number" id="mw-input" step="0.01" placeholder="180.16" class="mw-field small">
-                            <span class="unit">g/mol</span>
+                            <table id="h_nmr-table" class="data-table spreadsheet-table compact">
+                                <thead>
+                                    <tr>
+                                        <th><sup>1</sup>H (ppm)</th>
+                                        <th></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <tr>
+                                        <td><input type="number" step="0.01" placeholder="7.2" class="spreadsheet-input small"></td>
+                                        <td><button class="btn-icon" onclick="removeRow(this)" title="Remove"><i class="fas fa-times"></i></button></td>
+                                    </tr>
+                                </tbody>
+                            </table>
                         </div>
                     </div>
                 </div>

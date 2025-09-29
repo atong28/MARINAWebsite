@@ -58,6 +58,15 @@ def initialize_model_background():
     """Initialize the model in a background thread to avoid blocking server startup."""
     global _model_initialized, _model_init_error, _model_loading
     
+    # If predictor already has a model, mark initialized and return
+    try:
+        if getattr(predictor, "_model", None) is not None:
+            _model_initialized = True
+            _model_loading = False
+            return
+    except Exception:
+        pass
+
     if _model_initialized or _model_loading:
         return
     
@@ -99,8 +108,8 @@ def initialize_model():
         logger.error(f"Model initialization failed: {e}")
         return False
 
-# Start background model loading on startup
-initialize_model_background()
+# Initialize model once at startup (import time). Idempotent via predictor._model check.
+initialize_model()
 
 
 @app.route('/health', methods=['GET'])

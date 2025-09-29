@@ -103,6 +103,12 @@ body {
     font-size: 0.875rem;
 }
 
+/* Ensure status text height consistency */
+.backend-status .status-text {
+    line-height: 1;
+    display: inline-block;
+}
+
 .status-indicator {
     font-size: 0.75rem;
     animation: pulse 2s infinite;
@@ -155,17 +161,25 @@ body {
 }
 
 /* Compact grid for all inputs on one view */
-.input-grid {
+.input-grid { display: none; }
+
+.input-grid-cols {
     display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+    grid-template-columns: repeat(1, minmax(0, 1fr));
     gap: 1rem;
     padding: 1rem 1.5rem 1.5rem;
 }
 
-@media (min-width: 1100px) {
-    .input-grid {
+@media (min-width: 900px) {
+    .input-grid-cols {
         grid-template-columns: repeat(3, minmax(0, 1fr));
     }
+}
+
+.input-col {
+    display: grid;
+    gap: 1rem;
+    align-content: start;
 }
 
 .input-card {
@@ -232,6 +246,61 @@ body {
 .input-section h2 i {
     margin-right: 0.5rem;
     color: var(--primary-color);
+}
+
+/* Input help blurb */
+.input-help {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.75rem 1.25rem;
+    padding: 0.75rem 1.5rem 0.5rem;
+    background: var(--light-bg);
+    border-bottom: 1px solid var(--border-color);
+}
+
+.input-help .help-item {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+}
+
+.input-help .help-item i {
+    margin-right: 0.4rem;
+    color: var(--text-primary);
+}
+
+.input-help .help-title {
+    width: 100%;
+    margin-bottom: 0.25rem;
+    color: var(--text-primary);
+}
+
+.input-help .help-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.75rem 1.5rem;
+    width: 100%;
+}
+
+.input-help .help-pair {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.input-help .btn[disabled] {
+    opacity: 1;
+    cursor: default;
+}
+
+.chem sup {
+    font-size: 0.75em;
+}
+
+.help-label {
+    color: var(--text-secondary);
+    font-size: 0.9rem;
 }
 
 /* Tabs */

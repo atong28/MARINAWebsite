@@ -1,4 +1,4 @@
-# MARINA Molecular Structure Prediction
+# MARINA: Molecular Structure Annotator
 
 A deep learning system for predicting molecular structures from spectral data using PyTorch Lightning and modern web technologies.
 

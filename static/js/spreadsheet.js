@@ -28,24 +28,37 @@ class SpreadsheetTable {
     }
     
     makeCellsFocusable() {
-        const cells = this.table.querySelectorAll('td');
-        cells.forEach(cell => {
-            if (!cell.querySelector('input')) {
-                cell.setAttribute('tabindex', '0');
-                cell.classList.add('spreadsheet-cell');
-            } else {
-                const input = cell.querySelector('input');
-                input.classList.add('spreadsheet-input');
-                
+        this.addPasteListenersToInputs();
+    }
+    
+    addPasteListenersToInputs() {
+        const inputs = this.table.querySelectorAll('input');
+        inputs.forEach(input => {
+            input.classList.add('spreadsheet-input');
+            
                 // Add paste event listener directly to each input
                 input.addEventListener('paste', (e) => {
                     e.preventDefault();
                     e.stopPropagation();
                     const pastedText = e.clipboardData.getData('text/plain');
                     if (pastedText) {
+                        // Temporarily disable input validation during paste
+                        input.setAttribute('data-pasting', 'true');
                         this.pasteData(pastedText);
+                        // Re-enable validation after a short delay
+                        setTimeout(() => {
+                            input.removeAttribute('data-pasting');
+                        }, 100);
                     }
                 });
+        });
+        
+        // Also handle cells without inputs
+        const cells = this.table.querySelectorAll('td');
+        cells.forEach(cell => {
+            if (!cell.querySelector('input')) {
+                cell.setAttribute('tabindex', '0');
+                cell.classList.add('spreadsheet-cell');
             }
         });
     }
@@ -117,7 +130,20 @@ class SpreadsheetTable {
             e.stopPropagation();
             const pastedText = e.clipboardData.getData('text/plain');
             if (pastedText) {
+                // Temporarily disable validation on all inputs during paste
+                const inputs = this.table.querySelectorAll('input');
+                inputs.forEach(input => {
+                    input.setAttribute('data-pasting', 'true');
+                });
+                
                 this.pasteData(pastedText);
+                
+                // Re-enable validation after paste is complete
+                setTimeout(() => {
+                    inputs.forEach(input => {
+                        input.removeAttribute('data-pasting');
+                    });
+                }, 100);
             }
         });
     }
@@ -176,8 +202,8 @@ class SpreadsheetTable {
                     break;
                 case 'v':
                     if (e.ctrlKey || e.metaKey) {
-                        e.preventDefault();
-                        this.pasteSelection();
+                        // Let the paste event handlers handle this
+                        // No need to prevent default or call pasteSelection
                     }
                     break;
             }
@@ -343,25 +369,6 @@ class SpreadsheetTable {
         }
     }
     
-    pasteSelection() {
-        // Try to get clipboard data directly
-        if (navigator.clipboard && navigator.clipboard.readText) {
-            navigator.clipboard.readText().then(text => {
-                this.pasteData(text);
-            }).catch(err => {
-                this.showPasteDialog();
-            });
-        } else {
-            this.showPasteDialog();
-        }
-    }
-    
-    showPasteDialog() {
-        const text = prompt('Paste your data here (tab-separated values):');
-        if (text && text.trim()) {
-            this.pasteData(text);
-        }
-    }
     
     // Test function to manually trigger paste with sample data
     testPaste() {
@@ -494,12 +501,28 @@ class SpreadsheetTable {
                         // Clean the value and validate it's a number
                         const cleanValue = value.replace(/[^\d.-]/g, '');
                         if (cleanValue && !isNaN(parseFloat(cleanValue))) {
-                            inputs[colIndex].value = cleanValue;
+                            // Set value directly without triggering validation
+                            const input = inputs[colIndex];
+                            input.setAttribute('data-pasting', 'true');
+                            input.value = cleanValue;
+                            // Trigger input event to update any dependent logic
+                            input.dispatchEvent(new Event('input', { bubbles: true }));
                         }
                     }
                 });
             }
         });
+        
+        // Re-add paste listeners to any new inputs that were created
+        this.addPasteListenersToInputs();
+        
+        // Clean up data-pasting attributes after paste is complete
+        setTimeout(() => {
+            const allInputs = this.table.querySelectorAll('input[data-pasting]');
+            allInputs.forEach(input => {
+                input.removeAttribute('data-pasting');
+            });
+        }, 200);
         
         // Update input summary if the function exists
         if (typeof updateInputSummary === 'function') {
@@ -572,11 +595,31 @@ document.addEventListener('DOMContentLoaded', function() {
         const activeElement = document.activeElement;
         let targetTable = null;
         
+        // First check if the active element is directly in a table
         for (const table of spreadsheetTables) {
-            if (table.table.contains(activeElement) || 
-                (activeElement.tagName === 'INPUT' && table.table.contains(activeElement))) {
+            if (table.table.contains(activeElement)) {
                 targetTable = table;
                 break;
+            }
+        }
+        
+        // If no direct match, check if we're in an input within a table
+        if (!targetTable && activeElement.tagName === 'INPUT') {
+            for (const table of spreadsheetTables) {
+                if (table.table.contains(activeElement)) {
+                    targetTable = table;
+                    break;
+                }
+            }
+        }
+        
+        // If still no match, check if the event target is in a table
+        if (!targetTable) {
+            for (const table of spreadsheetTables) {
+                if (table.table.contains(e.target)) {
+                    targetTable = table;
+                    break;
+                }
             }
         }
         
@@ -585,7 +628,20 @@ document.addEventListener('DOMContentLoaded', function() {
             e.stopPropagation();
             const pastedText = e.clipboardData.getData('text/plain');
             if (pastedText) {
+                // Temporarily disable validation on all inputs during paste
+                const inputs = targetTable.table.querySelectorAll('input');
+                inputs.forEach(input => {
+                    input.setAttribute('data-pasting', 'true');
+                });
+                
                 targetTable.pasteData(pastedText);
+                
+                // Re-enable validation after paste is complete
+                setTimeout(() => {
+                    inputs.forEach(input => {
+                        input.removeAttribute('data-pasting');
+                    });
+                }, 100);
             }
         }
     });

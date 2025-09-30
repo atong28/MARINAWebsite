@@ -49,6 +49,15 @@
                 <div id="spectral-help" class="help-tab-content">
                     <h3>Spectral Data Input</h3>
                     
+                    <h4>Keyboard Shortcuts:</h4>
+                    <ul>
+                        <li><strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>): Paste data from clipboard</li>
+                        <li><strong>Ctrl+C</strong> (or <strong>Cmd+C</strong>): Copy selected data</li>
+                        <li><strong>Arrow keys</strong>: Navigate between cells</li>
+                        <li><strong>Tab</strong>: Move to next cell</li>
+                        <li><strong>Enter</strong>: Move to next row</li>
+                    </ul>
+                    
                     <h4>HSQC NMR:</h4>
                     <ul>
                         <li>Enter H-1 chemical shift (ppm), C-13 chemical shift (ppm), and intensity values</li>
@@ -146,7 +155,7 @@
                             <span class="help-label">Clear all rows</span>
                         </div>
                         <div class="help-pair">
-                            <button class="btn btn-info btn-sm" type="button" disabled><i class="fas fa-paste"></i></button>
+                            <span class="help-label"><strong>Ctrl+V</strong> (or <strong>Cmd+V</strong>)</span>
                             <span class="help-label">Paste from spreadsheet (CSV/TSV)</span>
                         </div>
                         <div class="help-pair">
@@ -168,9 +177,6 @@
                                     </button>
                                     <button class="btn btn-secondary btn-sm" onclick="clearTable('hsqc')" title="Clear">
                                         <i class="fas fa-trash"></i>
-                                    </button>
-                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('hsqc')" title="Paste">
-                                        <i class="fas fa-paste"></i>
                                     </button>
                                     <button class="btn btn-secondary btn-sm" onclick="swapHSQCColumns()" title="Swap ^{13}C/ ^1H">
                                         <i class="fas fa-exchange-alt"></i>
@@ -207,9 +213,6 @@
                                     <button class="btn btn-secondary btn-sm" onclick="clearTable('mass_spec')" title="Clear">
                                         <i class="fas fa-trash"></i>
                                     </button>
-                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('mass_spec')" title="Paste">
-                                        <i class="fas fa-paste"></i>
-                                    </button>
                                 </div>
                             </div>
                             <table id="mass_spec-table" class="data-table spreadsheet-table compact">
@@ -242,9 +245,6 @@
                                     </button>
                                     <button class="btn btn-secondary btn-sm" onclick="clearTable('c_nmr')" title="Clear">
                                         <i class="fas fa-trash"></i>
-                                    </button>
-                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('c_nmr')" title="Paste">
-                                        <i class="fas fa-paste"></i>
                                     </button>
                                 </div>
                             </div>
@@ -286,9 +286,6 @@
                                     </button>
                                     <button class="btn btn-secondary btn-sm" onclick="clearTable('h_nmr')" title="Clear">
                                         <i class="fas fa-trash"></i>
-                                    </button>
-                                    <button class="btn btn-info btn-sm" onclick="pasteFromClipboard('h_nmr')" title="Paste">
-                                        <i class="fas fa-paste"></i>
                                     </button>
                                 </div>
                             </div>

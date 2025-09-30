@@ -248,16 +248,6 @@ function clearTable(tableId) {
     });
 }
 
-// Paste from clipboard functionality
-async function pasteFromClipboard(tableId) {
-    try {
-        const text = await navigator.clipboard.readText();
-        parseAndFillTable(tableId, text);
-        showMessage('Data pasted successfully!', 'success');
-    } catch (err) {
-        showMessage('Failed to read from clipboard. Please paste manually.', 'error');
-    }
-}
 
 // Parse clipboard data and fill table
 function parseAndFillTable(tableId, text) {

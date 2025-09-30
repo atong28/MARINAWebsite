@@ -114,19 +114,16 @@ class SpectrumVisualizer {
             
             // Draw points
             points.forEach(point => {
-                const x = margin + ((point.hShift - hMin) / (hMax - hMin)) * plotWidth;
+                // Map high values to left, low values to right
+                const x = margin + ((hMax - point.hShift) / (hMax - hMin)) * plotWidth;
+                // Map low C values to top, high C values to bottom (lowest at top, increasing downward)
                 const y = margin + ((point.cShift - cMin) / (cMax - cMin)) * plotHeight;
-                const radius = Math.max(3, (point.intensity / intensityMax) * 12);
+                const radius = Math.max(3, (Math.abs(point.intensity) / intensityMax) * 12);
                 
-                ctx.fillStyle = this.isHsqcSwapped ? '#3b82f6' : '#10b981';
+                // Use red for positive peaks, blue for negative peaks
+                ctx.fillStyle = point.intensity >= 0 ? '#ef4444' : '#3b82f6';
                 ctx.beginPath();
                 ctx.arc(x, y, radius, 0, 2 * Math.PI);
-                ctx.fill();
-                
-                // Intensity indicator
-                ctx.fillStyle = this.isHsqcSwapped ? '#1d4ed8' : '#059669';
-                ctx.beginPath();
-                ctx.arc(x, y, radius * 0.6, 0, 2 * Math.PI);
                 ctx.fill();
             });
             
@@ -135,14 +132,14 @@ class SpectrumVisualizer {
             ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             
-            // X-axis numbers (H-1 shifts)
+            // X-axis numbers (<sup>1</sup>H shifts) - high to low (right to left)
             for (let i = 0; i <= 5; i++) {
                 const x = margin + (i * plotWidth / 5);
-                const value = hMin + (i * (hMax - hMin) / 5);
+                const value = hMax - (i * (hMax - hMin) / 5);
                 ctx.fillText(value.toFixed(1), x, height - 15);
             }
             
-            // Y-axis numbers (C-13 shifts)
+            // Y-axis numbers (¹³C shifts) - low to high (top to bottom)
             ctx.textAlign = 'right';
             for (let i = 0; i <= 5; i++) {
                 const y = margin + (i * plotHeight / 5);
@@ -155,12 +152,12 @@ class SpectrumVisualizer {
         ctx.fillStyle = '#374151';
         ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('H-1 Shift (ppm)', width/2, height - 5);
+        ctx.fillText('¹H Shift (ppm)', width/2, height - 5);
         
         ctx.save();
         ctx.translate(15, height/2);
         ctx.rotate(-Math.PI/2);
-        ctx.fillText('C-13 Shift (ppm)', 0, 0);
+        ctx.fillText('¹³C Shift (ppm)', 0, 0);
         ctx.restore();
     }
 
@@ -194,9 +191,10 @@ class SpectrumVisualizer {
             const range = maxShift - minShift || 1;
             
             this.data.forEach((shift, index) => {
-                const x = margin + ((shift - minShift) / range) * plotWidth;
+                // Map high values to left, low values to right
+                const x = margin + ((maxShift - shift) / range) * plotWidth;
                 
-                ctx.strokeStyle = '#3b82f6';
+                ctx.strokeStyle = '#ef4444'; // Red for positive peaks
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.moveTo(x, margin + plotHeight);
@@ -211,7 +209,7 @@ class SpectrumVisualizer {
             
             for (let i = 0; i <= 5; i++) {
                 const x = margin + (i * plotWidth / 5);
-                const value = minShift + (i * range / 5);
+                const value = maxShift - (i * range / 5);
                 ctx.fillText(value.toFixed(1), x, height - 15);
             }
         }
@@ -220,7 +218,7 @@ class SpectrumVisualizer {
         ctx.fillStyle = '#374151';
         ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('H-1 Shift (ppm)', width/2, height - 5);
+        ctx.fillText('¹H Shift (ppm)', width/2, height - 5);
     }
 
     drawC1D() {
@@ -253,9 +251,10 @@ class SpectrumVisualizer {
             const range = maxShift - minShift || 1;
             
             this.data.forEach((shift, index) => {
-                const x = margin + ((shift - minShift) / range) * plotWidth;
+                // Map high values to left, low values to right
+                const x = margin + ((maxShift - shift) / range) * plotWidth;
                 
-                ctx.strokeStyle = '#10b981';
+                ctx.strokeStyle = '#3b82f6'; // Blue for C NMR
                 ctx.lineWidth = 3;
                 ctx.beginPath();
                 ctx.moveTo(x, margin + plotHeight);
@@ -270,7 +269,7 @@ class SpectrumVisualizer {
             
             for (let i = 0; i <= 5; i++) {
                 const x = margin + (i * plotWidth / 5);
-                const value = minShift + (i * range / 5);
+                const value = maxShift - (i * range / 5);
                 ctx.fillText(value.toFixed(0), x, height - 15);
             }
         }
@@ -279,7 +278,7 @@ class SpectrumVisualizer {
         ctx.fillStyle = '#374151';
         ctx.font = '14px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('C-13 Shift (ppm)', width/2, height - 5);
+        ctx.fillText('¹³C Shift (ppm)', width/2, height - 5);
     }
 
     drawMassSpec() {
@@ -331,7 +330,8 @@ class SpectrumVisualizer {
             
             // Draw peaks
             points.forEach(point => {
-                const x = margin + ((point.mz - mzMin) / (mzMax - mzMin)) * plotWidth;
+                // Map high m/z to left, low m/z to right
+                const x = margin + ((mzMax - point.mz) / (mzMax - mzMin)) * plotWidth;
                 const barHeight = (point.intensity / intensityMax) * plotHeight;
                 
                 ctx.fillStyle = '#8b5cf6';
@@ -343,10 +343,10 @@ class SpectrumVisualizer {
             ctx.font = '12px -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif';
             ctx.textAlign = 'center';
             
-            // X-axis numbers (m/z)
+            // X-axis numbers (m/z) - high to low (right to left)
             for (let i = 0; i <= 5; i++) {
                 const x = margin + (i * plotWidth / 5);
-                const value = mzMin + (i * (mzMax - mzMin) / 5);
+                const value = mzMax - (i * (mzMax - mzMin) / 5);
                 ctx.fillText(value.toFixed(0), x, height - 15);
             }
             

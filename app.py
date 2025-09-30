@@ -18,7 +18,7 @@ from src.ranker import RankingSet
 # Try to import RDKit, but don't fail if not available
 try:
     from rdkit import Chem
-    from rdkit.Chem import AllChem
+    from rdkit.Chem import AllChem, Draw
     RDKIT_AVAILABLE = True
 except ImportError:
     RDKIT_AVAILABLE = False
@@ -197,18 +197,8 @@ def index():
   return send_from_directory('static', 'index.html')
 
 
-@app.route('/meta/<int:idx>', methods=['GET'])
-def meta(idx: int):
-  # Return metadata (smiles) for a retrieval index from rankingset_meta.pkl
-  meta_path = os.path.join('data', 'rankingset_meta.pkl')
-  if not os.path.exists(meta_path):
-    return jsonify({'error': 'rankingset_meta.pkl not found; mount data/ containing it'}), 404
-  with open(meta_path, 'rb') as f:
-    meta = pickle.load(f)
-  entry = meta.get(idx)
-  if entry is None:
-    return jsonify({'error': f'index {idx} not found in metadata'}), 404
-  return jsonify({'smiles': entry.get('smiles')})
+
+
 
 
 ## Removed /similarity endpoint for MVP (frontend uses top-k scores already)
@@ -255,8 +245,54 @@ def predict():
             if isinstance(out, tuple) and len(out) >= 2:
                 scores, indices = out[0], out[1]
                 pred_fp = out[2] if len(out) > 2 else None
-                logger.info(f"Returning {len(scores)} scores and {len(indices)} indices")
-                resp = {'topk_scores': scores, 'topk_indices': indices}
+                logger.info(f"Prediction completed: {len(scores)} scores and {len(indices)} indices")
+                
+                # Load metadata to get SMILES for all results
+                meta_path = os.path.join('data', 'rankingset_meta.pkl')
+                if not os.path.exists(meta_path):
+                    return jsonify({'error': 'rankingset_meta.pkl not found'}), 404
+                
+                with open(meta_path, 'rb') as f:
+                    meta = pickle.load(f)
+                
+                # Get SMILES and molecular structures for all results
+                results = []
+                for i, idx in enumerate(indices):
+                    entry = meta.get(idx)
+                    if entry:
+                        result_smiles = entry.get('smiles')
+                        if result_smiles:
+                            # Generate molecular structure SVG
+                            try:
+                                if RDKIT_AVAILABLE:
+                                    mol = Chem.MolFromSmiles(result_smiles)
+                                    if mol:
+                                        svg = Draw.MolToSVG(mol, width=200, height=200)
+                                    else:
+                                        svg = None
+                                else:
+                                    svg = None
+                            except Exception as e:
+                                logger.warning(f"Failed to render molecule for SMILES {result_smiles}: {e}")
+                                svg = None
+                            
+                            # Ensure similarity is a valid number
+                            similarity_val = scores[i] if scores[i] is not None else 0.0
+                            try:
+                                similarity_float = float(similarity_val)
+                                if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:  # Check for NaN
+                                    similarity_float = 0.0
+                            except (ValueError, TypeError):
+                                similarity_float = 0.0
+                            
+                            results.append({
+                                'index': idx,
+                                'smiles': result_smiles,
+                                'similarity': similarity_float,
+                                'svg': svg
+                            })
+                
+                resp = {'results': results}
                 if pred_fp is not None:
                     resp['pred_fp'] = pred_fp
                 return jsonify(resp)
@@ -271,51 +307,6 @@ def predict():
         return jsonify({'error': str(e)}), 500
 
 
-@app.route('/render-molecule', methods=['POST'])
-def render_molecule():
-    """Render molecular structure from SMILES string."""
-    try:
-        payload = request.get_json()
-        if not payload or 'smiles' not in payload:
-            return jsonify({'error': 'SMILES string required'}), 400
-        
-        smiles = payload['smiles'].strip()
-        if not smiles:
-            return jsonify({'error': 'SMILES string cannot be empty'}), 400
-        
-        if not RDKIT_AVAILABLE:
-            return jsonify({'error': 'RDKit not available for molecular rendering'}), 501
-        
-        # Create molecule from SMILES
-        mol = Chem.MolFromSmiles(smiles)
-        if mol is None:
-            return jsonify({'error': 'Invalid SMILES string'}), 400
-        
-        # Generate SVG representation
-        from rdkit.Chem import Draw
-        from rdkit.Chem.Draw import rdMolDraw2D
-        
-        # Create drawer with smaller dimensions to fit in result cards
-        drawer = rdMolDraw2D.MolDraw2DSVG(200, 200)
-        drawer.SetFontSize(10)
-        
-        # Draw molecule
-        drawer.DrawMolecule(mol)
-        drawer.FinishDrawing()
-        
-        # Get SVG string
-        svg_string = drawer.GetDrawingText()
-        
-        return jsonify({
-            'smiles': smiles,
-            'svg': svg_string,
-            'molecular_weight': Chem.rdMolDescriptors.CalcExactMolWt(mol),
-            'formula': Chem.rdMolDescriptors.CalcMolFormula(mol)
-        })
-        
-    except Exception as e:
-        logger.error(f"Render molecule error: {e}", exc_info=True)
-        return jsonify({'error': str(e)}), 500
 
 @app.route('/smiles-search', methods=['POST'])
 def smiles_search():
@@ -378,12 +369,54 @@ def smiles_search():
         sims = ranker._sims(pred.unsqueeze(0))  # (N, 1)
         sims_sorted, _ = torch.topk(sims.squeeze(), k=k, dim=0)
         
-        logger.info(f"SMILES search completed: {len(sims_sorted)} results")
+        # Load metadata to get SMILES for all results
+        meta_path = os.path.join('data', 'rankingset_meta.pkl')
+        if not os.path.exists(meta_path):
+            return jsonify({'error': 'rankingset_meta.pkl not found'}), 404
+        
+        with open(meta_path, 'rb') as f:
+            meta = pickle.load(f)
+        
+        # Get SMILES for all results
+        results = []
+        for i, idx in enumerate(idxs.squeeze().tolist()):
+            entry = meta.get(idx)
+            if entry:
+                result_smiles = entry.get('smiles')
+                if result_smiles:
+                    # Generate molecular structure SVG
+                    try:
+                        if RDKIT_AVAILABLE:
+                            mol = Chem.MolFromSmiles(result_smiles)
+                            if mol:
+                                svg = Draw.MolToSVG(mol, width=200, height=200)
+                            else:
+                                svg = None
+                        else:
+                            svg = None
+                    except Exception as e:
+                        logger.warning(f"Failed to render molecule for SMILES {result_smiles}: {e}")
+                        svg = None
+                    
+                    # Ensure similarity is a valid number
+                    similarity_val = sims_sorted[i] if sims_sorted[i] is not None else 0.0
+                    try:
+                        similarity_float = float(similarity_val)
+                        if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:  # Check for NaN
+                            similarity_float = 0.0
+                    except (ValueError, TypeError):
+                        similarity_float = 0.0
+                    
+                    results.append({
+                        'index': idx,
+                        'smiles': result_smiles,
+                        'similarity': similarity_float,
+                        'svg': svg
+                    })
         
         return jsonify({
-            'topk_scores': sims_sorted.tolist(),
-            'topk_indices': idxs.squeeze().tolist(),
-            'smiles': smiles
+            'results': results,
+            'query_smiles': smiles
         })
         
     except Exception as e:

@@ -129,37 +129,6 @@ function updateInputSummary() {
     }
 }
 
-// Render molecular structure
-function renderMolecule(smiles, containerId) {
-    fetch('/render-molecule', {
-        method: 'POST',
-        headers: {
-            'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({ smiles: smiles })
-    })
-    .then(response => response.json())
-    .then(data => {
-        if (data.error) {
-            console.error('Error rendering molecule:', data.error);
-            return;
-        }
-        
-        const container = document.getElementById(containerId);
-        container.innerHTML = `
-            <div class="molecule-structure">
-                <div class="molecule-svg">${data.svg}</div>
-                <div class="molecule-info">
-                    <div class="formula">${data.formula}</div>
-                    <div class="mw">MW: ${data.molecular_weight.toFixed(2)} g/mol</div>
-                </div>
-            </div>
-        `;
-    })
-    .catch(error => {
-        console.error('Error:', error);
-    });
-}
 
 // Help section functions
 function toggleHelp() {
@@ -577,13 +546,14 @@ async function checkBackendHealth() {
             showMessage('Backend is running but model is still initializing...', 'warning');
         } else if (data.error) {
             showMessage(`Model initialization failed: ${data.error}`, 'error');
-    } else {
+        } else {
             showMessage('Backend health check failed', 'error');
         }
     } catch (error) {
         showMessage('Cannot connect to backend health endpoint', 'error');
     }
 }
+
 
 // Collect data from all inputs
 function collectInputData() {
@@ -798,6 +768,7 @@ async function runPrediction() {
         
         const result = await response.json();
         
+        
         if (result.error) {
             throw new Error(result.error);
         }
@@ -829,6 +800,30 @@ async function runPrediction() {
 // Display prediction results
 async function displayResults(result) {
     const resultsGrid = document.getElementById('results-grid');
+    
+    // Handle new optimized response format
+    if (result.results && Array.isArray(result.results)) {
+        const results = result.results;
+        
+        if (results.length === 0) {
+            resultsGrid.innerHTML = '<p class="error-message">No results returned from the model.</p>';
+            return;
+        }
+
+        // Clear and display all results immediately
+        resultsGrid.innerHTML = '';
+        const maxResults = Math.min(10, results.length);
+        
+        for (let i = 0; i < maxResults; i++) {
+            const resultData = results[i];
+            const card = createResultCard(i + 1, resultData);
+            resultsGrid.appendChild(card);
+        }
+        
+        return;
+    }
+    
+    // Fallback for old response format (backward compatibility)
     const indices = result.topk_indices || result.topk || [];
     const scores = result.topk_scores || [];
     
@@ -880,7 +875,42 @@ async function displayResults(result) {
     }
 }
 
-// Create blank result card element
+// Create result card with complete data
+function createResultCard(position, resultData) {
+    const card = document.createElement('div');
+    card.className = 'result-card';
+    
+    // Robust similarity handling
+    let similarity = 0.0;
+    if (resultData && typeof resultData.similarity === 'number' && !isNaN(resultData.similarity)) {
+        similarity = resultData.similarity;
+    }
+    
+    const smiles = (resultData && resultData.smiles) ? resultData.smiles : '';
+    const svg = (resultData && resultData.svg) ? resultData.svg : '';
+    
+    // Ensure similarity is a valid number and convert to percentage
+    const similarityPercent = (similarity * 100).toFixed(1);
+    
+    card.innerHTML = `
+        <div class="card-header">
+            <div class="card-title">Result #${position}</div>
+            <div class="similarity-score">${similarityPercent}%</div>
+        </div>
+        <div class="card-body">
+            <div id="molecule-${position}" class="molecule-container">
+                ${svg || '<div class="no-molecule">No structure available</div>'}
+            </div>
+            <div><strong>SMILES:</strong></div>
+            <div class="smiles-code">${smiles}</div>
+            <div><strong>Similarity:</strong> <span>${similarityPercent}%</span></div>
+        </div>
+    `;
+    
+    return card;
+}
+
+// Create blank result card element (for backward compatibility)
 function createBlankResultCard(position) {
     const card = document.createElement('div');
     card.className = 'result-card loading';
@@ -942,33 +972,8 @@ function updateResultCard(position, idx, smiles, tanimoto, errorMessage) {
         </div>
     `;
     
-    // Render molecular structure
-    renderMolecule(smiles, `molecule-${position + 1}`);
 }
 
-// Create result card element (legacy function for compatibility)
-function createResultCard(idx, smiles, tanimoto) {
-    const card = document.createElement('div');
-    card.className = 'result-card';
-    
-    card.innerHTML = `
-        <div class="card-header">
-            <div class="card-title">Result #${idx}</div>
-            <div class="similarity-score">${(tanimoto * 100).toFixed(1)}%</div>
-        </div>
-        <div class="card-body">
-            <div id="molecule-${idx}" class="molecule-container"></div>
-            <div><strong>SMILES:</strong></div>
-            <div class="smiles-code">${smiles}</div>
-            <div><strong>Similarity:</strong> ${tanimoto.toFixed(3)}</div>
-        </div>
-    `;
-    
-    // Render molecular structure
-    renderMolecule(smiles, `molecule-${idx}`);
-    
-    return card;
-}
 
 // Update backend status indicator
 async function updateBackendStatus() {
@@ -1077,6 +1082,7 @@ async function runSmilesSearch() {
         }
         
         const result = await response.json();
+        
         
         if (result.error) {
             throw new Error(result.error);

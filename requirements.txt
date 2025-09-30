@@ -9,3 +9,4 @@ Werkzeug==2.3.7
 Flask-Caching
 peewee
 Flask-Login
+rdkit

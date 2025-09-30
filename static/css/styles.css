@@ -1516,3 +1516,22 @@ body {
         grid-template-rows: repeat(2, 1fr);
     }
 }
+
+/* Optimized result cards */
+.result-card .molecule-container svg {
+    max-width: 100%;
+    height: auto;
+    display: block;
+    margin: 0 auto;
+}
+
+.no-molecule {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 200px;
+    background-color: #f8fafc;
+    border: 2px dashed #cbd5e1;
+    color: #64748b;
+    font-style: italic;
+}

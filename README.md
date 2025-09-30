@@ -24,9 +24,9 @@ The system uses a transformer-based architecture with cross-attention mechanisms
 - **Responsive Design**: Works on desktop and mobile devices
 
 ### Data Input Formats
-- **HSQC NMR**: C-13 shift, H-1 shift, and intensity values (3 columns)
-- **H NMR**: H-1 chemical shift values (1 column)
-- **C NMR**: C-13 chemical shift values (1 column)
+- **HSQC NMR**: <sup>13</sup>C shift, <sup>1</sup>H shift, and intensity values (3 columns)
+- **H NMR**: <sup>1</sup>H chemical shift values (1 column)
+- **C NMR**: <sup>13</sup>C chemical shift values (1 column)
 - **Mass Spec**: m/z and intensity pairs (2 columns)
 - **Molecular Weight**: Single scalar value in g/mol
 

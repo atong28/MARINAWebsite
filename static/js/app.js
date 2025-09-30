@@ -980,14 +980,25 @@ async function updateBackendStatus() {
     
     if (!indicator || !statusText) return; // Exit early if sub-elements don't exist
     
+    // Show loading state immediately
+    indicator.className = 'fas fa-circle status-indicator loading';
+    statusText.textContent = 'Checking backend status...';
+    
     try {
+        // Add timeout to prevent hanging on slow backend responses
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
+        
         const response = await fetch('/health', {
             method: 'GET',
             headers: {
                 'Accept': 'application/json',
                 'Cache-Control': 'no-cache'
-            }
+            },
+            signal: controller.signal
         });
+        
+        clearTimeout(timeoutId);
         const data = await response.json();
         
         if (response.ok && data.model_loaded) {
@@ -1009,7 +1020,12 @@ async function updateBackendStatus() {
     } catch (error) {
         console.warn('Backend status check failed:', error);
         indicator.className = 'fas fa-circle status-indicator error';
-        statusText.textContent = 'Cannot connect to backend';
+        
+        if (error.name === 'AbortError') {
+            statusText.textContent = 'Backend connection timeout - still starting up';
+        } else {
+            statusText.textContent = 'Cannot connect to backend';
+        }
     }
 }
 
@@ -1078,8 +1094,10 @@ async function runSmilesSearch() {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
-    // Check backend status on load
-    updateBackendStatus();
+    // Check backend status after a short delay to allow page to render first
+    setTimeout(() => {
+        updateBackendStatus();
+    }, 100);
     
     // Update input summary on any input change, paste, or table modification
     document.addEventListener('input', updateInputSummary);

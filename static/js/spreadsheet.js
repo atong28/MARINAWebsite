@@ -528,6 +528,11 @@ class SpreadsheetTable {
         if (typeof updateInputSummary === 'function') {
             updateInputSummary();
         }
+        
+        // Update visualizations after paste
+        if (typeof updateVisualizations === 'function') {
+            updateVisualizations();
+        }
     }
     
     showMessage(message, type) {

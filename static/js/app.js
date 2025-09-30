@@ -2,6 +2,70 @@
 let currentTab = 'hsqc';
 let helpVisible = false;
 
+// Collapsible sections state
+const collapsibleState = {
+    'visualizations': true,
+    'example-molecules': true
+};
+
+// Sample data for example molecules
+const exampleMolecules = {
+    ruticarponineA: {
+        name: 'Ruticarponine A',
+        smiles: 'COC1=C(CCC(C)(C)O)C(=O)NC2=C(O)C=CC=C12',
+        hsqc: [
+            7.14, 112.8, 1,
+            7.01, 121.7, 1,
+            6.92, 114.0, 1,
+            2.55, 19.3, -1,
+            1.56, 42.3, -1,
+            1.15, 29.2, 1,
+            1.15, 29.2, 1,
+            3.86, 61.5, 1
+        ],
+        h_nmr: [7.14, 7.01, 6.92, 2.55, 1.56, 1.15, 1.15, 10.31, 10.22, 4.24, 3.86],
+        c_nmr: [162.8, 123.8, 160.8, 112.8, 121.7, 114.0, 143.8, 126.9, 117.2, 19.3, 42.3, 68.9, 29.2, 29.2, 61.5],
+        mass_spec: [],
+        mw: 277.131
+    },
+    homatropineHydrobromide: {
+        name: 'Homatropine hydrobromide',
+        smiles: 'CN1C2CCC1CC(OC(=O)C(O)c1ccccc1)C2',
+        hsqc: [
+            7.19, 128.33, 10867,
+            7.29, 128.27, 4768.7,
+            7.4895, 126.39, 10559,
+            5.1294, 76.94, 5882.4,
+            5.035, 68.19, 7546.1,
+            2.9696, 59.31, 10559,
+            2.1943, 40.25, 22638,
+            2.03, 36.24, -15739,
+            1.8285, 36.24, -13941,
+            2.2352, 25.28, -10559,
+            1.8792, 25.28, -12971
+        ],
+        h_nmr: [2.13, 2.25, 3.18, 2.03, 5.14, 7.41, 7.32],
+        c_nmr: [128.58, 128.47, 66.91, 35.73, 39.2, 72.96, 138.32, 172.05, 25.37, 61.55, 126.58],
+        mass_spec: [
+            68.0495, 2.1604,
+            70.0651, 1.9298,
+            82.0651, 2.1584,
+            83.073, 1.3015,
+            91.0542, 3.9915,
+            93.0699, 8.8415,
+            107.0491, 7.3605,
+            110.0964, 1.6722,
+            124.1121, 62.9276,
+            125.1199, 2.7327,
+            140.107, 1.3497,
+            142.1226, 32.9808,
+            338.075, 1.7876,
+            356.0856, 62.8202
+        ],
+        mw: 355.0783
+    }
+};
+
 // Update input summary
 function updateInputSummary() {
     const summaryContent = document.getElementById('input-summary-content');
@@ -187,6 +251,11 @@ function addRow(tableId) {
     }
     
     tbody.appendChild(newRow);
+    
+    // Update visualizations after adding row
+    if (typeof updateVisualizations === 'function') {
+        updateVisualizations();
+    }
 }
 
 // Create table row with specified cells
@@ -229,6 +298,11 @@ function removeRow(button) {
     // Don't remove if it's the last row
     if (tbody.children.length > 1) {
         row.remove();
+        
+        // Update visualizations after removing row
+        if (typeof updateVisualizations === 'function') {
+            updateVisualizations();
+        }
     }
 }
 
@@ -246,6 +320,11 @@ function clearTable(tableId) {
     tbody.querySelectorAll('input').forEach(input => {
         input.value = '';
     });
+    
+    // Update visualizations after clearing
+    if (typeof updateVisualizations === 'function') {
+        updateVisualizations();
+    }
 }
 
 
@@ -285,6 +364,106 @@ function parseAndFillTable(tableId, text) {
             }
         });
     });
+}
+
+// Load example molecule data
+function loadExampleMolecule(moleculeKey) {
+    const molecule = exampleMolecules[moleculeKey];
+    if (!molecule) return;
+    
+    // Clear all existing data
+    clearTable('hsqc');
+    clearTable('h_nmr');
+    clearTable('c_nmr');
+    clearTable('mass_spec');
+    
+    // Load HSQC data
+    if (molecule.hsqc && molecule.hsqc.length > 0) {
+        loadDataIntoTable('hsqc', molecule.hsqc, 3);
+    }
+    
+    // Load H NMR data
+    if (molecule.h_nmr && molecule.h_nmr.length > 0) {
+        loadDataIntoTable('h_nmr', molecule.h_nmr, 1);
+    }
+    
+    // Load C NMR data
+    if (molecule.c_nmr && molecule.c_nmr.length > 0) {
+        loadDataIntoTable('c_nmr', molecule.c_nmr, 1);
+    }
+    
+    // Load Mass Spec data
+    if (molecule.mass_spec && molecule.mass_spec.length > 0) {
+        loadDataIntoTable('mass_spec', molecule.mass_spec, 2);
+    }
+    
+    // Load Molecular Weight
+    if (molecule.mw) {
+        const mwInput = document.getElementById('mw-input');
+        if (mwInput) {
+            mwInput.value = molecule.mw;
+        }
+    }
+    
+    // Update summary and visualizations
+    updateInputSummary();
+    updateVisualizations();
+    
+    // Show success message
+    showMessage(`Loaded ${molecule.name} example data`, 'success');
+}
+
+// Helper function to load data into a specific table
+function loadDataIntoTable(tableId, data, columnsPerRow) {
+    const table = document.getElementById(`${tableId}-table`);
+    const tbody = table.querySelector('tbody');
+    
+    // Clear existing rows except the first one
+    while (tbody.children.length > 1) {
+        tbody.removeChild(tbody.lastChild);
+    }
+    
+    // Add rows as needed
+    const numRows = Math.ceil(data.length / columnsPerRow);
+    for (let i = 1; i < numRows; i++) {
+        addRow(tableId);
+    }
+    
+    // Fill data
+    for (let i = 0; i < data.length; i += columnsPerRow) {
+        const rowIndex = Math.floor(i / columnsPerRow);
+        const row = tbody.children[rowIndex];
+        const inputs = row.querySelectorAll('input');
+        
+        for (let j = 0; j < columnsPerRow && (i + j) < data.length; j++) {
+            if (inputs[j]) {
+                inputs[j].value = data[i + j];
+            }
+        }
+    }
+    
+    // Update visualizations after loading data
+    if (typeof updateVisualizations === 'function') {
+        updateVisualizations();
+    }
+}
+
+// Toggle collapsible sections
+function toggleSection(sectionId) {
+    const content = document.getElementById(`${sectionId}-content`);
+    const icon = document.getElementById(`${sectionId}-icon`);
+    
+    if (content && icon) {
+        collapsibleState[sectionId] = !collapsibleState[sectionId];
+        
+        if (collapsibleState[sectionId]) {
+            content.classList.remove('collapsed');
+            icon.classList.remove('rotated');
+        } else {
+            content.classList.add('collapsed');
+            icon.classList.add('rotated');
+        }
+    }
 }
 
 // HSQC column swapping
@@ -650,47 +829,124 @@ async function runPrediction() {
 // Display prediction results
 async function displayResults(result) {
     const resultsGrid = document.getElementById('results-grid');
-    resultsGrid.innerHTML = '';
-    
     const indices = result.topk_indices || result.topk || [];
     const scores = result.topk_scores || [];
-    const predFp = result.pred_fp || result.prediction || null;
     
     if (!indices || indices.length === 0) {
         resultsGrid.innerHTML = '<p class="error-message">No results returned from the model.</p>';
-      return;
+        return;
     }
 
-    // Process results
-    for (let i = 0; i < Math.min(indices.length, 20); i++) {
-      const idx = indices[i];
-      const similarity = scores[i] || 0.0; // Use backend-computed similarity score
+    // Create 10 blank result cards first
+    resultsGrid.innerHTML = '';
+    const maxResults = Math.min(10, indices.length);
+    
+    for (let i = 0; i < maxResults; i++) {
+        const card = createBlankResultCard(i + 1);
+        resultsGrid.appendChild(card);
+    }
+    
+    // Process results and fill them in gradually
+    for (let i = 0; i < maxResults; i++) {
+        const idx = indices[i];
+        const similarity = scores[i] || 0.0;
         
         try {
             // Fetch metadata
             const metaResponse = await fetch(`/meta/${idx}`);
-            if (!metaResponse.ok) continue;
+            if (!metaResponse.ok) {
+                updateResultCard(i, null, null, null, 'Failed to load metadata');
+                continue;
+            }
             
             const meta = await metaResponse.json();
-      const smiles = meta.smiles;
+            const smiles = meta.smiles;
             
-            if (!smiles) continue;
+            if (!smiles) {
+                updateResultCard(i, null, null, null, 'No SMILES data available');
+                continue;
+            }
             
-            // Create result card
-            const card = createResultCard(idx, smiles, similarity);
-            resultsGrid.appendChild(card);
+            // Update the card with real data
+            updateResultCard(i, idx, smiles, similarity, null);
+            
+            // Add a small delay to show gradual loading
+            await new Promise(resolve => setTimeout(resolve, 200));
             
         } catch (error) {
             console.warn(`Failed to process result ${idx}:`, error);
+            updateResultCard(i, null, null, null, 'Error loading data');
         }
-    }
-    
-    if (resultsGrid.children.length === 0) {
-        resultsGrid.innerHTML = '<p class="error-message">No valid results could be retrieved.</p>';
     }
 }
 
-// Create result card element
+// Create blank result card element
+function createBlankResultCard(position) {
+    const card = document.createElement('div');
+    card.className = 'result-card loading';
+    
+    card.innerHTML = `
+        <div class="card-header">
+            <div class="card-title">Result #${position}</div>
+            <div class="similarity-score loading">Loading...</div>
+        </div>
+        <div class="card-body">
+            <div id="molecule-${position}" class="molecule-container loading">
+                <div class="loading-spinner"></div>
+            </div>
+            <div><strong>SMILES:</strong></div>
+            <div class="smiles-code loading">Loading...</div>
+            <div><strong>Similarity:</strong> <span class="loading">Loading...</span></div>
+        </div>
+    `;
+    
+    return card;
+}
+
+// Update result card with actual data
+function updateResultCard(position, idx, smiles, tanimoto, errorMessage) {
+    const card = document.querySelector(`#results-grid .result-card:nth-child(${position + 1})`);
+    if (!card) return;
+    
+    if (errorMessage) {
+        // Show error state
+        card.innerHTML = `
+            <div class="card-header">
+                <div class="card-title">Result #${position + 1}</div>
+                <div class="similarity-score error">Error</div>
+            </div>
+            <div class="card-body">
+                <div class="molecule-container error">
+                    <i class="fas fa-exclamation-triangle"></i>
+                </div>
+                <div><strong>Error:</strong></div>
+                <div class="error-message">${errorMessage}</div>
+            </div>
+        `;
+        card.className = 'result-card error';
+        return;
+    }
+    
+    // Update with real data
+    card.className = 'result-card';
+    card.innerHTML = `
+        <div class="card-header">
+            <div class="card-title">Result #${position + 1}</div>
+            <div class="similarity-score">${(tanimoto * 100).toFixed(1)}%</div>
+        </div>
+        <div class="card-body">
+            <div id="molecule-${position + 1}" class="molecule-container"></div>
+            <div><strong>SMILES:</strong></div>
+            <div class="smiles-code">${smiles}</div>
+            <div><strong>Similarity:</strong> ${tanimoto.toFixed(3)}</div>
+        </div>
+    `;
+    
+    // Render molecular structure
+    renderMolecule(smiles, `molecule-${position + 1}`);
+}
+
+// Create result card element (legacy function for compatibility)
 function createResultCard(idx, smiles, tanimoto) {
     const card = document.createElement('div');
     card.className = 'result-card';
@@ -717,22 +973,32 @@ function createResultCard(idx, smiles, tanimoto) {
 // Update backend status indicator
 async function updateBackendStatus() {
     const statusElement = document.getElementById('backend-status');
+    if (!statusElement) return; // Exit early if element doesn't exist
+    
     const indicator = statusElement.querySelector('.status-indicator');
     const statusText = statusElement.querySelector('.status-text');
     
+    if (!indicator || !statusText) return; // Exit early if sub-elements don't exist
+    
     try {
-        const response = await fetch('/health');
+        const response = await fetch('/health', {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'Cache-Control': 'no-cache'
+            }
+        });
         const data = await response.json();
         
         if (response.ok && data.model_loaded) {
             indicator.className = 'fas fa-circle status-indicator ready';
-            statusText.textContent = 'Backend ready - Model loaded';
+            statusText.textContent = `Backend ready - Model loaded (uptime: ${data.uptime_seconds || 'unknown'}s)`;
         } else if (data.status === 'loading') {
             indicator.className = 'fas fa-circle status-indicator loading';
-            statusText.textContent = 'Model loading in background...';
+            statusText.textContent = `Model loading in background... (uptime: ${data.uptime_seconds || 'unknown'}s)`;
         } else if (data.status === 'initializing') {
             indicator.className = 'fas fa-circle status-indicator initializing';
-            statusText.textContent = 'Model initializing...';
+            statusText.textContent = `Model initializing... (uptime: ${data.uptime_seconds || 'unknown'}s)`;
         } else if (data.error) {
             indicator.className = 'fas fa-circle status-indicator error';
             statusText.textContent = 'Model initialization failed';
@@ -741,6 +1007,7 @@ async function updateBackendStatus() {
             statusText.textContent = 'Backend unavailable';
         }
     } catch (error) {
+        console.warn('Backend status check failed:', error);
         indicator.className = 'fas fa-circle status-indicator error';
         statusText.textContent = 'Cannot connect to backend';
     }
@@ -837,7 +1104,7 @@ document.addEventListener('DOMContentLoaded', function() {
     // Initial input summary update
     updateInputSummary();
     
-    // Check status every 5 seconds if not ready
+    // Check status every 10 seconds if not ready (reduced frequency to prevent multiple model setups)
     const statusCheckInterval = setInterval(async () => {
         try {
             const response = await fetch('/health');
@@ -852,5 +1119,5 @@ document.addEventListener('DOMContentLoaded', function() {
         } catch (error) {
             updateBackendStatus();
         }
-    }, 5000);
+    }, 10000);
 });

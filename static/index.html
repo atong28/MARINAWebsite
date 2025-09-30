@@ -103,10 +103,10 @@
 
                     <h4>Example SMILES:</h4>
                     <ul>
-                        <li><code>CCO</code> - Ethanol</li>
-                        <li><code>CC(=O)O</code> - Acetic acid</li>
-                        <li><code>C1=CC=CC=C1</code> - Benzene</li>
-                        <li><code>CC(C)O</code> - Isopropanol</li>
+                        <li><code>CN1C=NC2=C1C(=O)N(C(=O)N2C)C</code> - Caffeine</li>
+                        <li><code>CC(=O)OC1=CC=CC=C1C(=O)O</code> - Aspirin</li>
+                        <li><code>C([C@@H]1[C@H]([C@@H]([C@H]([C@H](O1)O)O)O)O)O</code> - Glucose</li>
+                        <li><code>COC1=C(CCC(C)(C)O)C(=O)NC2=C(O)C=CC=C12</code> - Ruticarponine A</li>
                     </ul>
                 </div>
 
@@ -309,16 +309,67 @@
 
             </div>
 
+            <!-- Example Molecules Section -->
+            <div class="example-section">
+                <div class="collapsible-header" onclick="toggleSection('example-molecules')">
+                    <h2><i class="fas fa-flask"></i> Example Molecules</h2>
+                    <i class="fas fa-chevron-down toggle-icon" id="example-molecules-icon"></i>
+                </div>
+                <div class="collapsible-content" id="example-molecules-content">
+                    <p class="section-description">Load sample data to test the prediction system</p>
+                    
+                    <div class="example-molecules">
+                        <button class="btn btn-outline" onclick="loadExampleMolecule('ruticarponineA')">
+                            Ruticarponine A
+                        </button>
+                        <button class="btn btn-outline" onclick="loadExampleMolecule('homatropineHydrobromide')">
+                            Homatropine Hydrobromide
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Input Summary Section -->
+            <div class="input-summary-section">
+                <div class="input-summary">
+                    <h3><i class="fas fa-info-circle"></i> Input Summary</h3>
+                    <div id="input-summary-content" class="input-summary-content">
+                        <p class="no-inputs">No spectral data entered yet</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Spectral Visualizations Section -->
+            <div class="visualizations-section">
+                <div class="collapsible-header" onclick="toggleSection('visualizations')">
+                    <h3><i class="fas fa-chart-line"></i> Spectral Visualizations</h3>
+                    <i class="fas fa-chevron-down toggle-icon" id="visualizations-icon"></i>
+                </div>
+                <div class="collapsible-content" id="visualizations-content">
+                    <div class="spectral-visualizations-grid">
+                    <div class="viz-container">
+                        <h4>HSQC NMR</h4>
+                        <canvas id="hsqc-canvas" width="600" height="400"></canvas>
+                    </div>
+                    <div class="viz-container">
+                        <h4>H NMR</h4>
+                        <canvas id="h_nmr-canvas" width="600" height="300"></canvas>
+                    </div>
+                    <div class="viz-container">
+                        <h4>C NMR</h4>
+                        <canvas id="c_nmr-canvas" width="600" height="300"></canvas>
+                    </div>
+                    <div class="viz-container">
+                        <h4>Mass Spec</h4>
+                        <canvas id="mass_spec-canvas" width="600" height="400"></canvas>
+                    </div>
+                    </div>
+                </div>
+            </div>
+
             <!-- Prediction Controls Section -->
             <div class="controls-section">
                 <div class="prediction-controls">
-                    <div class="input-summary">
-                        <h3><i class="fas fa-info-circle"></i> Input Summary</h3>
-                        <div id="input-summary-content" class="input-summary-content">
-                            <p class="no-inputs">No spectral data entered yet</p>
-                        </div>
-                    </div>
-                    
                     <div class="control-group">
                         <label for="top-k">Number of Results:</label>
                         <select id="top-k">
@@ -342,7 +393,7 @@
                 
                 <div class="smiles-search">
                     <div class="search-input-group">
-                        <input type="text" id="smiles-input" placeholder="e.g., CCO (ethanol)" class="smiles-field">
+                        <input type="text" id="smiles-input" placeholder="e.g., CN1C=NC2=C1C(=O)N(C(=O)N2C)C (caffeine)" class="smiles-field">
                         <button class="btn btn-primary" onclick="runSmilesSearch()">
                             <i class="fas fa-search"></i> Search
                         </button>
@@ -350,9 +401,9 @@
                     <div class="smiles-info">
                         <p><strong>Example SMILES:</strong></p>
                         <ul>
-                            <li><code>CCO</code> - Ethanol</li>
-                            <li><code>CC(=O)O</code> - Acetic acid</li>
-                            <li><code>C1=CC=CC=C1</code> - Benzene</li>
+                            <li><code>CN1C=NC2=C1C(=O)N(C(=O)N2C)C</code> - Caffeine</li>
+                            <li><code>CC(=O)OC1=CC=CC=C1C(=O)O</code> - Aspirin</li>
+                            <li><code>C([C@@H]1[C@H]([C@@H]([C@H]([C@H](O1)O)O)O)O)O</code> - Glucose</li>
                         </ul>
                     </div>
                 </div>
@@ -370,6 +421,7 @@
     </div>
 
     <script src="/static/js/spreadsheet.js"></script>
+    <script src="/static/js/visualization.js"></script>
     <script src="/static/js/app.js"></script>
   </body>
 </html>

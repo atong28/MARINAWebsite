@@ -64,6 +64,10 @@ logging.getLogger("werkzeug").setLevel(logging.WARNING)
 _model_initialized = False
 _model_init_error = None
 _model_loading = False
+_model_init_attempted = False
+
+# Server startup time for debugging
+_server_start_time = time.time()
 
 def initialize_model_background():
     """Initialize the model in a background thread to avoid blocking server startup."""
@@ -103,10 +107,16 @@ def initialize_model_background():
 
 def initialize_model():
     """Initialize the model synchronously (for compatibility)."""
-    global _model_initialized, _model_init_error
+    global _model_initialized, _model_init_error, _model_init_attempted
     
     if _model_initialized:
         return True
+    
+    if _model_init_attempted:
+        logger.info("Model initialization already attempted, skipping...")
+        return False
+    
+    _model_init_attempted = True
     
     try:
         logger.info("Initializing MARINA model synchronously...")
@@ -120,35 +130,61 @@ def initialize_model():
         return False
 
 # Initialize model once at startup (import time). Idempotent via predictor._model check.
-initialize_model()
+# Only initialize if not already initialized to prevent multiple initializations
+if not _model_initialized and not _model_loading:
+    logger.info("Starting model initialization at import time...")
+    initialize_model()
+else:
+    logger.info(f"Model initialization skipped - initialized: {_model_initialized}, loading: {_model_loading}")
+
 
 
 @app.route('/health', methods=['GET'])
 def health():
     """Health check endpoint with model status."""
-    global _model_initialized, _model_init_error, _model_loading
+    global _model_initialized, _model_init_error, _model_loading, _model_init_attempted, _server_start_time
+    
+    # Log health check for debugging
+    uptime = time.time() - _server_start_time
+    logger.debug(f"Health check - initialized: {_model_initialized}, loading: {_model_loading}, attempted: {_model_init_attempted}, uptime: {uptime:.1f}s")
+    
+    base_response = {
+        'uptime_seconds': round(uptime, 1),
+        'server_start_time': _server_start_time
+    }
     
     if _model_initialized:
         return jsonify({
+            **base_response,
             'status': 'ok',
             'model_loaded': True,
             'message': 'Model is ready for predictions'
         })
     elif _model_loading:
         return jsonify({
+            **base_response,
             'status': 'loading',
             'model_loaded': False,
             'message': 'Model is loading in background'
         })
     elif _model_init_error:
         return jsonify({
+            **base_response,
             'status': 'error',
             'model_loaded': False,
             'error': _model_init_error,
             'message': 'Model initialization failed'
         }), 503
+    elif _model_init_attempted:
+        return jsonify({
+            **base_response,
+            'status': 'initializing',
+            'model_loaded': False,
+            'message': 'Model initialization in progress'
+        }), 202
     else:
         return jsonify({
+            **base_response,
             'status': 'initializing',
             'model_loaded': False,
             'message': 'Model initialization not started'

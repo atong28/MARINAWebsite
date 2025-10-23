@@ -765,6 +765,20 @@ body {
     overflow: hidden;
 }
 
+.molecule-image {
+    max-width: 100%;
+    max-height: 200px;
+    width: auto;
+    height: auto;
+    border-radius: 4px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    transition: transform 0.2s ease;
+}
+
+.molecule-image:hover {
+    transform: scale(1.02);
+}
+
 .molecule-info {
     margin-top: 0.5rem;
     font-size: 0.875rem;
@@ -1534,4 +1548,484 @@ body {
     border: 2px dashed #cbd5e1;
     color: #64748b;
     font-style: italic;
+}
+
+/* Database links and molecule name styles */
+.molecule-name {
+    margin: 0.5rem 0;
+    font-weight: 600;
+    font-size: 0.95rem;
+    color: var(--text-primary);
+}
+
+.primary-link {
+    color: var(--primary-color);
+    text-decoration: none;
+    transition: color 0.2s ease;
+}
+
+.primary-link:hover {
+    color: var(--primary-hover);
+    text-decoration: underline;
+}
+
+.database-links {
+    margin: 0.5rem 0;
+    font-size: 0.85rem;
+}
+
+.db-link {
+    color: var(--secondary-color);
+    text-decoration: none;
+    font-weight: 500;
+    padding: 0.2rem 0.4rem;
+    border-radius: var(--radius-sm);
+    transition: all 0.2s ease;
+    display: inline-block;
+    margin: 0.1rem;
+}
+
+.db-link:hover {
+    text-decoration: underline;
+    background-color: var(--light-bg);
+}
+
+.db-link.coconut {
+    color: #059669;
+}
+
+.db-link.coconut:hover {
+    background-color: #ecfdf5;
+    color: #047857;
+}
+
+.db-link.lotus {
+    color: #dc2626;
+}
+
+.db-link.lotus:hover {
+    background-color: #fef2f2;
+    color: #b91c1c;
+}
+
+.db-link.npmrd {
+    color: #7c3aed;
+}
+
+.db-link.npmrd:hover {
+    background-color: #f3e8ff;
+    color: #6d28d9;
+}
+
+/* Placeholder fields styles */
+.placeholder-fields {
+    margin: 0.75rem 0;
+    padding: 0.5rem;
+    background-color: var(--light-bg);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border-color);
+}
+
+.placeholder-field {
+    margin: 0.25rem 0;
+    font-size: 0.85rem;
+    color: var(--text-secondary);
+}
+
+.placeholder-field strong {
+    color: var(--text-primary);
+    font-weight: 600;
+}
+
+.placeholder-value {
+    color: var(--text-muted);
+    font-style: italic;
+}
+
+/* Analysis page styles */
+.analysis-layout {
+    display: flex;
+    flex-direction: column;
+    gap: 2rem;
+    margin-top: 2rem;
+}
+
+/* Top row with selected molecule */
+.selected-molecule-row {
+    display: flex;
+    gap: 2rem;
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-color);
+}
+
+.molecule-image-section {
+    flex: 0 0 300px;
+}
+
+.molecule-image-section h3 {
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    font-size: 1.1rem;
+}
+
+.molecule-info-section {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+}
+
+/* Analysis input section */
+.analysis-input-section {
+    width: 100%;
+}
+
+/* Three column visualizations */
+.analysis-visualizations-section {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-color);
+}
+
+.analysis-visualizations-section h2 {
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    font-size: 1.2rem;
+}
+
+.three-column-visualizations {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1.5rem;
+}
+
+.visualization-column h3 {
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    font-weight: 600;
+    text-align: center;
+}
+
+.molecule-info {
+    font-size: 0.9rem;
+}
+
+.molecule-name-display {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.5rem;
+}
+
+.molecule-smiles-display {
+    color: var(--text-secondary);
+    font-family: monospace;
+    font-size: 0.8rem;
+    margin-bottom: 0.5rem;
+    word-break: break-all;
+}
+
+.molecule-database-links {
+    font-size: 0.8rem;
+}
+
+.analysis-visualizations {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-color);
+}
+
+.analysis-visualizations h3 {
+    margin-bottom: 1rem;
+    color: var(--text-primary);
+    font-size: 1.1rem;
+}
+
+.visualization-container {
+    margin-bottom: 1.5rem;
+}
+
+.visualization-container:last-child {
+    margin-bottom: 0;
+}
+
+.visualization-container h4 {
+    margin-bottom: 0.5rem;
+    color: var(--text-secondary);
+    font-size: 0.9rem;
+    font-weight: 600;
+}
+
+.analysis-molecule-container {
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    width: 300px;
+    height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--light-bg);
+    overflow: hidden;
+    position: relative;
+}
+
+.analysis-molecule-container .molecule-image {
+    max-width: none !important;
+    max-height: none !important;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.molecule-container {
+    width: 300px;
+    height: 300px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: var(--light-bg);
+    border: 2px solid var(--border-color);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.molecule-container .molecule-image {
+    max-width: none !important;
+    max-height: none !important;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+/* Fingerprint differences section */
+.fingerprint-differences-section {
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 1.5rem;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-color);
+    margin-top: 2rem;
+}
+
+.fingerprint-differences-section h2 {
+    margin-bottom: 1.5rem;
+    color: var(--text-primary);
+    font-size: 1.2rem;
+}
+
+.differences-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 2rem;
+}
+
+.difference-category h3 {
+    margin-bottom: 1rem;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.bits-list {
+    max-height: 400px;
+    overflow-y: auto;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-md);
+    padding: 1rem;
+    background-color: var(--light-bg);
+}
+
+.bit-item {
+    background: white;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.75rem;
+    margin-bottom: 0.5rem;
+    font-size: 0.85rem;
+}
+
+.bit-item:last-child {
+    margin-bottom: 0;
+}
+
+.bit-header {
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 0.25rem;
+}
+
+.bit-details {
+    color: var(--text-secondary);
+    font-size: 0.8rem;
+}
+
+.fragment-structure {
+    background: var(--light-bg);
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    padding: 0.5rem;
+    margin-top: 0.5rem;
+    text-align: center;
+    font-family: monospace;
+    font-size: 0.75rem;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.substructure-image {
+    max-width: 150px;
+    max-height: 150px;
+    border: 1px solid var(--border-color);
+    border-radius: var(--radius-sm);
+    background: white;
+    padding: 0.25rem;
+}
+
+.smiles-text {
+    font-size: 0.75rem;
+    text-align: center;
+}
+
+.no-differences {
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 2rem;
+}
+
+/* Tab navigation */
+.tab-navigation {
+    display: flex;
+    background: white;
+    border-radius: var(--radius-lg);
+    padding: 0.5rem;
+    box-shadow: var(--shadow-md);
+    border: 1px solid var(--border-color);
+    margin-bottom: 2rem;
+}
+
+.tab-button {
+    flex: 1;
+    padding: 0.75rem 1.5rem;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    font-size: 1rem;
+    font-weight: 500;
+    cursor: pointer;
+    border-radius: var(--radius-md);
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+}
+
+.tab-button:hover {
+    background-color: var(--light-bg);
+    color: var(--text-primary);
+}
+
+.tab-button.active {
+    background-color: var(--primary-color);
+    color: white;
+    box-shadow: var(--shadow-sm);
+}
+
+.tab-button.active:hover {
+    background-color: var(--primary-dark);
+}
+
+.tab-content {
+    display: none;
+}
+
+.tab-content.active {
+    display: block;
+}
+
+.analysis-molecule-container .no-molecule {
+    color: var(--text-muted);
+    font-style: italic;
+    text-align: center;
+    padding: 2rem;
+}
+
+/* Card actions styles */
+.card-actions {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+.card-actions .btn {
+    width: 100%;
+    justify-content: center;
+}
+
+/* Global variables for analysis state */
+:root {
+    --analysis-current-result: null;
+    --analysis-original-data: null;
+}
+
+/* Responsive design for analysis page */
+@media (max-width: 1024px) {
+    .analysis-layout {
+        gap: 1rem;
+    }
+    
+    .selected-molecule-row {
+        flex-direction: column;
+        gap: 1rem;
+    }
+    
+    .molecule-image-section {
+        flex: none;
+        width: 100%;
+    }
+    
+    .three-column-visualizations {
+        grid-template-columns: 1fr;
+        gap: 1rem;
+    }
+}
+
+@media (max-width: 768px) {
+    .analysis-layout {
+        gap: 0.5rem;
+    }
+    
+    .selected-molecule-row {
+        padding: 1rem;
+        gap: 0.5rem;
+    }
+    
+    .analysis-visualizations-section {
+        padding: 1rem;
+    }
+    
+    .visualization-column h3 {
+        font-size: 0.9rem;
+    }
+    
+    .analysis-molecule-container {
+        min-height: 150px;
+    }
+    
+    .analysis-molecule-container .molecule-image {
+        max-height: 150px;
+    }
 }

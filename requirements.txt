@@ -10,3 +10,5 @@ Flask-Caching
 peewee
 Flask-Login
 rdkit
+numpy
+torch

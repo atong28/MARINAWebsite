@@ -415,6 +415,9 @@ function loadDataIntoTable(tableId, data, columnsPerRow) {
     if (typeof updateVisualizations === 'function') {
         updateVisualizations();
     }
+    
+    // Update visualization tab visibility
+    updateVisualizationTabVisibility();
 }
 
 // Toggle collapsible sections
@@ -810,6 +813,9 @@ async function displayResults(result) {
             return;
         }
 
+        // Store results globally for analysis page access
+        currentResults = results;
+        
         // Clear and display all results immediately
         resultsGrid.innerHTML = '';
         const maxResults = Math.min(10, results.length);
@@ -888,9 +894,63 @@ function createResultCard(position, resultData) {
     
     const smiles = (resultData && resultData.smiles) ? resultData.smiles : '';
     const svg = (resultData && resultData.svg) ? resultData.svg : '';
+    const name = (resultData && resultData.name) ? resultData.name : '';
+    const primaryLink = (resultData && resultData.primary_link) ? resultData.primary_link : '';
+    const databaseLinks = (resultData && resultData.database_links) ? resultData.database_links : {};
+    const npPathway = (resultData && resultData.np_pathway) ? resultData.np_pathway : null;
+    const npSuperclass = (resultData && resultData.np_superclass) ? resultData.np_superclass : null;
+    const npClass = (resultData && resultData.np_class) ? resultData.np_class : null;
     
     // Ensure similarity is a valid number and convert to percentage
     const similarityPercent = (similarity * 100).toFixed(1);
+    
+    // Handle both SVG and base64 image formats
+    let moleculeDisplay = '<div class="no-molecule">No structure available</div>';
+    if (svg) {
+        if (svg.startsWith('data:image/')) {
+            // Base64 image format (enhanced visualization)
+            moleculeDisplay = `<img src="${svg}" alt="Molecular structure" class="molecule-image" style="max-width: 100%; max-height: 200px; border-radius: 4px;">`;
+        } else if (svg.startsWith('<svg') || svg.startsWith('<')) {
+            // SVG format (basic visualization)
+            moleculeDisplay = svg;
+        }
+    }
+    
+    // Create database links section
+    let databaseLinksHtml = '';
+    if (Object.keys(databaseLinks).length > 0) {
+        const linkItems = [];
+        if (databaseLinks.coconut) {
+            linkItems.push(`<a href="${databaseLinks.coconut}" target="_blank" class="db-link coconut">COCONUT</a>`);
+        }
+        if (databaseLinks.lotus) {
+            linkItems.push(`<a href="${databaseLinks.lotus}" target="_blank" class="db-link lotus">LOTUS</a>`);
+        }
+        if (databaseLinks.npmrd) {
+            linkItems.push(`<a href="${databaseLinks.npmrd}" target="_blank" class="db-link npmrd">NP-MRD</a>`);
+        }
+        databaseLinksHtml = `<div class="database-links">${linkItems.join(' | ')}</div>`;
+    }
+    
+    // Create name section with primary link
+    let nameHtml = '';
+    if (name) {
+        if (primaryLink) {
+            nameHtml = `<div class="molecule-name"><a href="${primaryLink}" target="_blank" class="primary-link">${name}</a></div>`;
+        } else {
+            nameHtml = `<div class="molecule-name">${name}</div>`;
+        }
+    }
+    
+    // Create placeholder fields section
+    let placeholderFieldsHtml = '';
+    if (npPathway !== null || npSuperclass !== null || npClass !== null) {
+        const fields = [];
+        if (npPathway !== null) fields.push(`<div class="placeholder-field"><strong>NP Pathway:</strong> <span class="placeholder-value">${npPathway || 'N/A'}</span></div>`);
+        if (npSuperclass !== null) fields.push(`<div class="placeholder-field"><strong>NP Superclass:</strong> <span class="placeholder-value">${npSuperclass || 'N/A'}</span></div>`);
+        if (npClass !== null) fields.push(`<div class="placeholder-field"><strong>NP Class:</strong> <span class="placeholder-value">${npClass || 'N/A'}</span></div>`);
+        placeholderFieldsHtml = `<div class="placeholder-fields">${fields.join('')}</div>`;
+    }
     
     card.innerHTML = `
         <div class="card-header">
@@ -899,11 +959,19 @@ function createResultCard(position, resultData) {
         </div>
         <div class="card-body">
             <div id="molecule-${position}" class="molecule-container">
-                ${svg || '<div class="no-molecule">No structure available</div>'}
+                ${moleculeDisplay}
             </div>
+            ${nameHtml}
+            ${databaseLinksHtml}
             <div><strong>SMILES:</strong></div>
             <div class="smiles-code">${smiles}</div>
             <div><strong>Similarity:</strong> <span>${similarityPercent}%</span></div>
+            ${placeholderFieldsHtml}
+            <div class="card-actions">
+                <button class="btn btn-primary btn-sm" onclick="openAnalysis(${position - 1})">
+                    <i class="fas fa-microscope"></i> Analyze
+                </button>
+            </div>
         </div>
     `;
     
@@ -965,7 +1033,9 @@ function updateResultCard(position, idx, smiles, tanimoto, errorMessage) {
             <div class="similarity-score">${(tanimoto * 100).toFixed(1)}%</div>
         </div>
         <div class="card-body">
-            <div id="molecule-${position + 1}" class="molecule-container"></div>
+            <div id="molecule-${position + 1}" class="molecule-container">
+                <div class="no-molecule">Loading enhanced visualization...</div>
+            </div>
             <div><strong>SMILES:</strong></div>
             <div class="smiles-code">${smiles}</div>
             <div><strong>Similarity:</strong> ${tanimoto.toFixed(3)}</div>
@@ -1098,6 +1168,805 @@ async function runSmilesSearch() {
     }
 }
 
+// Global variables for analysis state
+let currentAnalysisResult = null;
+let originalAnalysisData = null;
+let currentResults = [];
+
+// Page navigation functions
+function openAnalysis(resultIndex) {
+    console.log('openAnalysis called with index:', resultIndex);
+    console.log('currentResults:', currentResults);
+    
+    if (!currentResults || !currentResults[resultIndex]) {
+        console.error('No result data available for analysis');
+        showMessage('No result data available for analysis', 'error');
+        return;
+    }
+    
+    currentAnalysisResult = currentResults[resultIndex];
+    originalAnalysisData = collectInputData();
+    
+    console.log('currentAnalysisResult:', currentAnalysisResult);
+    console.log('originalAnalysisData:', originalAnalysisData);
+    
+    // Show analysis page
+    const mainPage = document.getElementById('main-page');
+    const analysisPage = document.getElementById('analysis-page');
+    
+    console.log('mainPage element:', mainPage);
+    console.log('analysisPage element:', analysisPage);
+    
+    if (mainPage) {
+        mainPage.style.display = 'none';
+    }
+    if (analysisPage) {
+        analysisPage.style.display = 'block';
+    }
+    
+    // Populate selected molecule info
+    populateSelectedMolecule(currentAnalysisResult);
+    
+    // Copy original data to analysis page
+    copyDataToAnalysisPage(originalAnalysisData);
+    
+    // Initially hide visualizations section
+    hideAnalysisVisualizations();
+    
+    // Update visualizations
+    if (typeof updateVisualizationsAnalysis === 'function') {
+        updateVisualizationsAnalysis();
+    }
+    
+    console.log('Analysis page should now be visible');
+}
+
+function goBackToMain() {
+    // Show main page
+    document.getElementById('main-page').style.display = 'block';
+    document.getElementById('analysis-page').style.display = 'none';
+    
+    // Reset analysis state
+    currentAnalysisResult = null;
+    originalAnalysisData = null;
+}
+
+function populateSelectedMolecule(result) {
+    const container = document.getElementById('selected-molecule-container');
+    const info = document.getElementById('selected-molecule-info');
+    const originalContainer = document.getElementById('original-molecule-visualization');
+    
+    // Display molecule structure
+    let moleculeDisplay = '<div class="no-molecule">No structure available</div>';
+    if (result.svg) {
+        if (result.svg.startsWith('data:image/')) {
+            moleculeDisplay = `<img src="${result.svg}" alt="Molecular structure" class="molecule-image" style="max-width: 100%; max-height: 200px; border-radius: 4px;">`;
+        } else if (result.svg.startsWith('<svg') || result.svg.startsWith('<')) {
+            moleculeDisplay = result.svg;
+        }
+    }
+    container.innerHTML = moleculeDisplay;
+    
+    // Also populate the original molecule visualization
+    originalContainer.innerHTML = moleculeDisplay;
+    
+    // Initialize zoom/pan for both images
+    if (typeof panzoom !== 'undefined') {
+        const topImage = container.querySelector('.molecule-image');
+        const originalImage = originalContainer.querySelector('.molecule-image');
+        
+        if (topImage) {
+            panzoom(topImage, {
+                maxZoom: 5,
+                minZoom: 0.5,
+                initialZoom: 1
+            });
+        }
+        
+        if (originalImage) {
+            panzoom(originalImage, {
+                maxZoom: 5,
+                minZoom: 0.5,
+                initialZoom: 1
+            });
+        }
+    }
+    
+    // Display molecule info
+    let nameHtml = '';
+    if (result.name) {
+        if (result.primary_link) {
+            nameHtml = `<a href="${result.primary_link}" target="_blank" class="primary-link">${result.name}</a>`;
+        } else {
+            nameHtml = result.name;
+        }
+    }
+    
+    let databaseLinksHtml = '';
+    if (result.database_links && Object.keys(result.database_links).length > 0) {
+        const linkItems = [];
+        if (result.database_links.coconut) {
+            linkItems.push(`<a href="${result.database_links.coconut}" target="_blank" class="db-link coconut">COCONUT</a>`);
+        }
+        if (result.database_links.lotus) {
+            linkItems.push(`<a href="${result.database_links.lotus}" target="_blank" class="db-link lotus">LOTUS</a>`);
+        }
+        if (result.database_links.npmrd) {
+            linkItems.push(`<a href="${result.database_links.npmrd}" target="_blank" class="db-link npmrd">NP-MRD</a>`);
+        }
+        databaseLinksHtml = linkItems.join(' | ');
+    }
+    
+    info.innerHTML = `
+        <div class="molecule-name-display">${nameHtml}</div>
+        <div class="molecule-smiles-display">${result.smiles}</div>
+        <div class="molecule-database-links">${databaseLinksHtml}</div>
+    `;
+}
+
+function copyDataToAnalysisPage(data) {
+    // Copy HSQC data
+    if (data.hsqc) {
+        loadDataIntoTableAnalysis('hsqc', data.hsqc, 3);
+    }
+    
+    // Copy H NMR data
+    if (data.h_nmr) {
+        loadDataIntoTableAnalysis('h_nmr', data.h_nmr, 1);
+    }
+    
+    // Copy C NMR data
+    if (data.c_nmr) {
+        loadDataIntoTableAnalysis('c_nmr', data.c_nmr, 1);
+    }
+    
+    // Copy Mass Spec data
+    if (data.mass_spec) {
+        loadDataIntoTableAnalysis('mass_spec', data.mass_spec, 2);
+    }
+    
+    // Copy Molecular Weight
+    if (data.mw) {
+        const mwInput = document.getElementById('analysis-mw-input');
+        if (mwInput) {
+            mwInput.value = data.mw;
+        }
+    }
+}
+
+// Analysis page table functions
+function addRowAnalysis(tableId) {
+    const table = document.getElementById(`analysis-${tableId}-table`);
+    const tbody = table.querySelector('tbody');
+    
+    let newRow;
+    
+    switch (tableId) {
+        case 'hsqc':
+            newRow = createRowAnalysis([
+                { type: 'number', step: '0.01', placeholder: 'e.g., 7.2' },
+                { type: 'number', step: '0.01', placeholder: 'e.g., 120.5' },
+                { type: 'number', step: '0.01', placeholder: 'e.g., 1.0' },
+                { type: 'button', onclick: 'removeRowAnalysis(this)', icon: 'fas fa-times', title: 'Remove row' }
+            ]);
+            break;
+        case 'h_nmr':
+            newRow = createRowAnalysis([
+                { type: 'number', step: '0.01', placeholder: 'e.g., 7.2' },
+                { type: 'button', onclick: 'removeRowAnalysis(this)', icon: 'fas fa-times', title: 'Remove row' }
+            ]);
+            break;
+        case 'c_nmr':
+            newRow = createRowAnalysis([
+                { type: 'number', step: '0.01', placeholder: 'e.g., 120.5' },
+                { type: 'button', onclick: 'removeRowAnalysis(this)', icon: 'fas fa-times', title: 'Remove row' }
+            ]);
+            break;
+        case 'mass_spec':
+            newRow = createRowAnalysis([
+                { type: 'number', step: '0.01', placeholder: 'e.g., 180.5' },
+                { type: 'number', step: '0.01', placeholder: 'e.g., 1000' },
+                { type: 'button', onclick: 'removeRowAnalysis(this)', icon: 'fas fa-times', title: 'Remove row' }
+            ]);
+            break;
+    }
+    
+    tbody.appendChild(newRow);
+    
+    // Update visualizations after adding row
+    if (typeof updateVisualizationsAnalysis === 'function') {
+        updateVisualizationsAnalysis();
+    }
+}
+
+function createRowAnalysis(cellConfigs) {
+    const row = document.createElement('tr');
+    
+    cellConfigs.forEach(config => {
+        const cell = document.createElement('td');
+        
+        if (config.type === 'number') {
+            const input = document.createElement('input');
+            input.type = 'number';
+            if (config.step) input.step = config.step;
+            if (config.placeholder) input.placeholder = config.placeholder;
+            input.className = 'spreadsheet-input small';
+            cell.appendChild(input);
+        } else if (config.type === 'button') {
+            const button = document.createElement('button');
+            button.className = 'btn-icon';
+            button.onclick = function() { eval(config.onclick); };
+            if (config.title) button.title = config.title;
+            
+            const icon = document.createElement('i');
+            icon.className = config.icon;
+            button.appendChild(icon);
+            
+            cell.appendChild(button);
+        }
+        
+        row.appendChild(cell);
+    });
+    
+    return row;
+}
+
+function removeRowAnalysis(button) {
+    const row = button.closest('tr');
+    const tbody = row.closest('tbody');
+    
+    // Don't remove if it's the last row
+    if (tbody.children.length > 1) {
+        row.remove();
+        
+        // Update visualizations after removing row
+        if (typeof updateVisualizationsAnalysis === 'function') {
+            updateVisualizationsAnalysis();
+        }
+    }
+}
+
+function clearTableAnalysis(tableId) {
+    const table = document.getElementById(`analysis-${tableId}-table`);
+    const tbody = table.querySelector('tbody');
+    
+    // Keep only the first row
+    while (tbody.children.length > 1) {
+        tbody.removeChild(tbody.lastChild);
+    }
+    
+    // Clear all inputs in the remaining row
+    tbody.querySelectorAll('input').forEach(input => {
+        input.value = '';
+    });
+    
+    // Update visualizations after clearing
+    if (typeof updateVisualizationsAnalysis === 'function') {
+        updateVisualizationsAnalysis();
+    }
+}
+
+function swapHSQCColumnsAnalysis() {
+    const table = document.getElementById('analysis-hsqc-table');
+    const hCol = table.querySelector('.hsqc-h-col');
+    const cCol = table.querySelector('.hsqc-c-col');
+    
+    // Swap headers
+    const hText = hCol.textContent;
+    const cText = cCol.textContent;
+    hCol.textContent = cText;
+    cCol.textContent = hText;
+    
+    // Swap column classes
+    hCol.classList.toggle('swapped');
+    cCol.classList.toggle('swapped');
+    
+    // Swap data in all rows
+    const rows = table.querySelectorAll('tbody tr');
+    rows.forEach(row => {
+        const cells = row.querySelectorAll('td');
+        if (cells.length >= 3) {
+            const hInput = cells[0].querySelector('input');
+            const cInput = cells[1].querySelector('input');
+            
+            const hValue = hInput.value;
+            const cValue = cInput.value;
+            
+            hInput.value = cValue;
+            cInput.value = hValue;
+        }
+    });
+    
+    // Update visualizations
+    if (typeof updateVisualizationsAnalysis === 'function') {
+        updateVisualizationsAnalysis();
+    }
+}
+
+function toggleSectionAnalysis(sectionId) {
+    const content = document.getElementById(`analysis-${sectionId}-content`);
+    const icon = document.getElementById(`analysis-${sectionId}-icon`);
+    
+    if (content && icon) {
+        const isCollapsed = content.classList.contains('collapsed');
+        
+        if (isCollapsed) {
+            content.classList.remove('collapsed');
+            icon.classList.remove('rotated');
+        } else {
+            content.classList.add('collapsed');
+            icon.classList.add('rotated');
+        }
+    }
+}
+
+// Run analysis function
+async function runAnalysis() {
+    if (!currentAnalysisResult) {
+        showMessage('No molecule selected for analysis', 'error');
+        return;
+    }
+    
+    const data = collectInputDataAnalysis();
+    const errors = validateInputData(data);
+    
+    if (errors.length > 0) {
+        errors.forEach(error => showMessage(error, 'error'));
+        return;
+    }
+    
+    // Hide visualizations during analysis
+    hideAnalysisVisualizations();
+    
+    // Show loading state
+    const btn = document.getElementById('analysis-predict-btn');
+    const originalText = btn.innerHTML;
+    btn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Running Analysis...';
+    btn.disabled = true;
+    
+    try {
+        const requestBody = {
+            current_data: data,
+            original_data: originalAnalysisData,
+            target_smiles: currentAnalysisResult.smiles,
+            target_index: currentAnalysisResult.index
+        };
+        
+        const response = await fetch('/analyze', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify(requestBody)
+        });
+        
+        if (!response.ok) {
+            let errorMessage = 'Analysis request failed.';
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch (e) {
+                errorMessage = `Server error (${response.status}). Please try again.`;
+            }
+            throw new Error(errorMessage);
+        }
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        
+        // Process analysis results
+        await processAnalysisResults(result);
+        
+        // Show visualizations after analysis is complete
+        showAnalysisVisualizations();
+        
+    } catch (error) {
+        showMessage(error.message, 'error');
+        console.error('Analysis error:', error);
+        // Show visualizations even if there was an error
+        showAnalysisVisualizations();
+    } finally {
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
+}
+
+function hideAnalysisVisualizations() {
+    const visualizationsSection = document.querySelector('.analysis-visualizations-section');
+    if (visualizationsSection) {
+        visualizationsSection.style.display = 'none';
+    }
+}
+
+function showAnalysisVisualizations() {
+    const visualizationsSection = document.querySelector('.analysis-visualizations-section');
+    if (visualizationsSection) {
+        visualizationsSection.style.display = 'block';
+    }
+}
+
+async function processAnalysisResults(result) {
+    // Update similarity visualization
+    await updateSimilarityVisualization(result.similarity_visualization);
+    
+    // Update change visualization
+    await updateChangeVisualization(result.change_visualization);
+    
+    // Update fingerprint differences
+    console.log('Processing fingerprint differences:', result.fingerprint_differences);
+    if (result.fingerprint_differences) {
+        updateFingerprintDifferences(result.fingerprint_differences);
+    } else {
+        console.log('No fingerprint differences found in result');
+    }
+}
+
+async function updateSimilarityVisualization(imageData) {
+    const container = document.getElementById('similarity-visualization');
+    
+    if (imageData) {
+        const moleculeDisplay = `<img src="${imageData}" alt="Similarity highlighting" class="molecule-image">`;
+        container.innerHTML = moleculeDisplay;
+        
+        // Initialize zoom/pan for the image
+        const img = container.querySelector('.molecule-image');
+        if (img && typeof panzoom !== 'undefined') {
+            panzoom(img, {
+                maxZoom: 5,
+                minZoom: 0.5,
+                initialZoom: 1
+            });
+        }
+    } else {
+        container.innerHTML = '<div class="no-molecule">Failed to generate similarity visualization</div>';
+    }
+}
+
+async function updateChangeVisualization(imageData) {
+    const container = document.getElementById('change-visualization');
+    
+    if (imageData) {
+        const moleculeDisplay = `<img src="${imageData}" alt="Change highlighting" class="molecule-image">`;
+        container.innerHTML = moleculeDisplay;
+        
+        // Initialize zoom/pan for the image
+        const img = container.querySelector('.molecule-image');
+        if (img && typeof panzoom !== 'undefined') {
+            panzoom(img, {
+                maxZoom: 5,
+                minZoom: 0.5,
+                initialZoom: 1
+            });
+        }
+    } else {
+        container.innerHTML = '<div class="no-molecule">Failed to generate change visualization</div>';
+    }
+}
+
+function updateFingerprintDifferences(differences) {
+    console.log('updateFingerprintDifferences called with:', differences);
+    
+    // Show the fingerprint differences section
+    const fingerprintSection = document.querySelector('.fingerprint-differences-section');
+    console.log('Fingerprint section found:', fingerprintSection);
+    if (fingerprintSection) {
+        fingerprintSection.style.display = 'block';
+        console.log('Fingerprint section made visible');
+    }
+    
+    // Update added bits list
+    const addedContainer = document.getElementById('added-bits-list');
+    if (differences.added && differences.added.length > 0) {
+        addedContainer.innerHTML = differences.added.map(bit => `
+            <div class="bit-item">
+                <div class="bit-header">Bit ${bit.bit_id}</div>
+                <div class="bit-details">
+                    Atom: ${bit.atom_symbol} | Radius: ${bit.radius}
+                </div>
+                <div class="fragment-structure">
+                    ${bit.substructure_image ? `<img src="${bit.substructure_image}" alt="Substructure" class="substructure-image">` : ''}
+                    <span class="smiles-text">${bit.fragment_smiles}</span>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        addedContainer.innerHTML = '<div class="no-differences">No added bits detected</div>';
+    }
+    
+    // Update removed bits list
+    const removedContainer = document.getElementById('removed-bits-list');
+    if (differences.removed && differences.removed.length > 0) {
+        removedContainer.innerHTML = differences.removed.map(bit => `
+            <div class="bit-item">
+                <div class="bit-header">Bit ${bit.bit_id}</div>
+                <div class="bit-details">
+                    Atom: ${bit.atom_symbol} | Radius: ${bit.radius}
+                </div>
+                <div class="fragment-structure">
+                    ${bit.substructure_image ? `<img src="${bit.substructure_image}" alt="Substructure" class="substructure-image">` : ''}
+                    <span class="smiles-text">${bit.fragment_smiles}</span>
+                </div>
+            </div>
+        `).join('');
+    } else {
+        removedContainer.innerHTML = '<div class="no-differences">No removed bits detected</div>';
+    }
+}
+
+function collectInputDataAnalysis() {
+    const data = {};
+    
+    // HSQC data
+    const hsqcTable = document.getElementById('analysis-hsqc-table');
+    const hsqcRows = hsqcTable.querySelectorAll('tbody tr');
+    const hsqcData = [];
+    
+    hsqcRows.forEach((row, index) => {
+        const inputs = row.querySelectorAll('input');
+        
+        if (inputs.length >= 3) {
+            const hShift = parseFloat(inputs[0].value);
+            const cShift = parseFloat(inputs[1].value);
+            const intensity = parseFloat(inputs[2].value);
+            
+            if (!isNaN(hShift) && !isNaN(cShift) && !isNaN(intensity) && inputs[0].value.trim() !== '' && inputs[1].value.trim() !== '' && inputs[2].value.trim() !== '') {
+                // Check if columns are swapped by looking at header classes
+                const table = document.getElementById('analysis-hsqc-table');
+                const hCol = table.querySelector('.hsqc-h-col');
+                const isSwapped = hCol.classList.contains('swapped');
+                
+                if (isSwapped) {
+                    // Columns are swapped, so first input is C, second is H
+                    hsqcData.push([cShift, hShift, intensity]);
+                } else {
+                    // Normal order: H, C, intensity
+                    hsqcData.push([hShift, cShift, intensity]);
+                }
+            }
+        }
+    });
+    
+    if (hsqcData.length > 0) {
+        data.hsqc = hsqcData.flat();
+    }
+    
+    // H NMR data
+    const hNmrTable = document.getElementById('analysis-h_nmr-table');
+    const hNmrRows = hNmrTable.querySelectorAll('tbody tr');
+    const hNmrData = [];
+    
+    hNmrRows.forEach(row => {
+        const input = row.querySelector('input');
+        if (input && input.value.trim()) {
+            const value = parseFloat(input.value);
+            if (!isNaN(value)) {
+                hNmrData.push(value);
+            }
+        }
+    });
+    
+    if (hNmrData.length > 0) {
+        data.h_nmr = hNmrData;
+    }
+    
+    // C NMR data
+    const cNmrTable = document.getElementById('analysis-c_nmr-table');
+    const cNmrRows = cNmrTable.querySelectorAll('tbody tr');
+    const cNmrData = [];
+    
+    cNmrRows.forEach(row => {
+        const input = row.querySelector('input');
+        if (input && input.value.trim()) {
+            const value = parseFloat(input.value);
+            if (!isNaN(value)) {
+                cNmrData.push(value);
+            }
+        }
+    });
+    
+    if (cNmrData.length > 0) {
+        data.c_nmr = cNmrData;
+    }
+    
+    // Mass spec data
+    const massSpecTable = document.getElementById('analysis-mass_spec-table');
+    const massSpecRows = massSpecTable.querySelectorAll('tbody tr');
+    const massSpecData = [];
+    
+    massSpecRows.forEach(row => {
+        const inputs = row.querySelectorAll('input');
+        if (inputs.length >= 2) {
+            const mz = parseFloat(inputs[0].value);
+            const intensity = parseFloat(inputs[1].value);
+            
+            if (!isNaN(mz) && !isNaN(intensity)) {
+                massSpecData.push([mz, intensity]);
+            }
+        }
+    });
+    
+    if (massSpecData.length > 0) {
+        data.mass_spec = massSpecData.flat();
+    }
+    
+    // Molecular weight
+    const mwInput = document.getElementById('analysis-mw-input');
+    if (mwInput && mwInput.value.trim()) {
+        const mw = parseFloat(mwInput.value);
+        if (!isNaN(mw)) {
+            data.mw = mw;
+        }
+    }
+    
+    return data;
+}
+
+function loadDataIntoTableAnalysis(tableId, data, columnsPerRow) {
+    const table = document.getElementById(`analysis-${tableId}-table`);
+    const tbody = table.querySelector('tbody');
+    
+    // Clear existing rows except the first one
+    while (tbody.children.length > 1) {
+        tbody.removeChild(tbody.lastChild);
+    }
+    
+    // Add rows as needed
+    const numRows = Math.ceil(data.length / columnsPerRow);
+    for (let i = 1; i < numRows; i++) {
+        addRowAnalysis(tableId);
+    }
+    
+    // Fill data
+    for (let i = 0; i < data.length; i += columnsPerRow) {
+        const rowIndex = Math.floor(i / columnsPerRow);
+        const row = tbody.children[rowIndex];
+        const inputs = row.querySelectorAll('input');
+        
+        for (let j = 0; j < columnsPerRow && (i + j) < data.length; j++) {
+            if (inputs[j]) {
+                inputs[j].value = data[i + j];
+            }
+        }
+    }
+    
+    // Update visualizations after loading data
+    if (typeof updateVisualizationsAnalysis === 'function') {
+        updateVisualizationsAnalysis();
+    }
+}
+
+// Update spectral visualizations for analysis page (removed - no longer needed)
+function updateVisualizationsAnalysis() {
+    // Analysis page visualizations have been removed
+    return;
+}
+
+// Show/hide visualization tabs based on data availability
+function showVisualizationTab(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.style.display = 'block';
+    }
+}
+
+function hideVisualizationTab(sectionId) {
+    const section = document.getElementById(sectionId);
+    if (section) {
+        section.style.display = 'none';
+    }
+}
+
+// Update visualization tab visibility for main page
+function updateVisualizationTabVisibility() {
+    const data = collectInputData();
+    
+    // Check if any data is present
+    const hasAnyData = (data.hsqc && data.hsqc.length > 0) ||
+                      (data.h_nmr && data.h_nmr.length > 0) ||
+                      (data.c_nmr && data.c_nmr.length > 0) ||
+                      (data.mass_spec && data.mass_spec.length > 0);
+    
+    // Show/hide the entire visualizations section
+    const visualizationsSection = document.querySelector('.visualizations-section');
+    if (visualizationsSection) {
+        visualizationsSection.style.display = hasAnyData ? 'block' : 'none';
+    }
+    
+    // Update each visualization tab visibility
+    if (data.hsqc && data.hsqc.length > 0) {
+        showVisualizationTab('hsqc-section');
+    } else {
+        hideVisualizationTab('hsqc-section');
+    }
+    
+    if (data.h_nmr && data.h_nmr.length > 0) {
+        showVisualizationTab('h_nmr-section');
+    } else {
+        hideVisualizationTab('h_nmr-section');
+    }
+    
+    if (data.c_nmr && data.c_nmr.length > 0) {
+        showVisualizationTab('c_nmr-section');
+    } else {
+        hideVisualizationTab('c_nmr-section');
+    }
+    
+    if (data.mass_spec && data.mass_spec.length > 0) {
+        showVisualizationTab('mass_spec-section');
+    } else {
+        hideVisualizationTab('mass_spec-section');
+    }
+}
+
+
+// Parse clipboard data and fill analysis table
+function parseAndFillTableAnalysis(tableId, text) {
+    const lines = text.trim().split('\n');
+    const table = document.getElementById(`analysis-${tableId}-table`);
+    const tbody = table.querySelector('tbody');
+    
+    // Clear existing data
+    clearTableAnalysis(tableId);
+    
+    let dataRows = [];
+    lines.forEach(line => {
+        const values = line.split(/[\t,;]/).map(v => v.trim()).filter(v => v);
+        if (values.length > 0) {
+            dataRows.push(values);
+        }
+    });
+    
+    // Ensure we have at least one row
+    if (dataRows.length === 0) return;
+    
+    // Add rows as needed
+    while (tbody.children.length < dataRows.length) {
+        addRowAnalysis(tableId);
+    }
+    
+    // Fill data
+    dataRows.forEach((values, rowIndex) => {
+        const row = tbody.children[rowIndex];
+        const inputs = row.querySelectorAll('input');
+        
+        values.forEach((value, colIndex) => {
+            if (inputs[colIndex]) {
+                inputs[colIndex].value = value;
+            }
+        });
+    });
+    
+    // Analysis page visualizations have been removed
+}
+
+// Tab switching functionality
+function switchMainTab(tabName) {
+    // Hide all tab contents
+    const tabContents = document.querySelectorAll('.tab-content');
+    tabContents.forEach(tab => tab.classList.remove('active'));
+    
+    // Remove active class from all tab buttons
+    const tabButtons = document.querySelectorAll('.tab-button');
+    tabButtons.forEach(button => button.classList.remove('active'));
+    
+    // Show selected tab content
+    const selectedTab = document.getElementById(`${tabName}-tab`);
+    if (selectedTab) {
+        selectedTab.classList.add('active');
+    }
+    
+    // Add active class to clicked button
+    const clickedButton = event.target.closest('.tab-button');
+    if (clickedButton) {
+        clickedButton.classList.add('active');
+    }
+}
+
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
     // Check backend status after a short delay to allow page to render first
@@ -1106,9 +1975,32 @@ document.addEventListener('DOMContentLoaded', function() {
     }, 100);
     
     // Update input summary on any input change, paste, or table modification
-    document.addEventListener('input', updateInputSummary);
-    document.addEventListener('paste', updateInputSummary);
-    document.addEventListener('change', updateInputSummary);
+    document.addEventListener('input', function() {
+        updateInputSummary();
+        updateVisualizationTabVisibility();
+    });
+    document.addEventListener('paste', function() {
+        updateInputSummary();
+        updateVisualizationTabVisibility();
+    });
+    document.addEventListener('change', function() {
+        updateInputSummary();
+        updateVisualizationTabVisibility();
+    });
+    
+    // Add copy-paste functionality for analysis page tables
+    document.addEventListener('paste', function(event) {
+        if (event.target.closest('.analysis-input-section')) {
+            const targetInput = event.target;
+            const table = targetInput.closest('table');
+            if (table) {
+                event.preventDefault();
+                const text = (event.clipboardData || window.clipboardData).getData('text');
+                const tableId = table.id.replace('analysis-', '').replace('-table', '');
+                parseAndFillTableAnalysis(tableId, text);
+            }
+        }
+    });
     
     // Also update when rows are added/removed
     const observer = new MutationObserver(function(mutations) {

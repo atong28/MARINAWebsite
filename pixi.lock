@@ -220,6 +220,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-dateutil-2.9.0.post0-pyhe01879c_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-fastjsonschema-2.21.2-pyhe01879c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-json-logger-2.0.7-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-64/python-lmdb-1.7.5-py311hc665b79_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-tzdata-2025.2-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.11-8_cp311.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pytz-2025.2-pyhd8ed1ab_0.conda
@@ -530,6 +531,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-dateutil-2.9.0.post0-pyhe01879c_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-fastjsonschema-2.21.2-pyhe01879c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-json-logger-2.0.7-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/linux-aarch64/python-lmdb-1.7.5-py311h8e4e6a5_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-tzdata-2025.2-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.11-8_cp311.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pytz-2025.2-pyhd8ed1ab_0.conda
@@ -813,6 +815,7 @@ environments:
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-dateutil-2.9.0.post0-pyhe01879c_2.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-fastjsonschema-2.21.2-pyhe01879c_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-json-logger-2.0.7-pyhd8ed1ab_0.conda
+      - conda: https://conda.anaconda.org/conda-forge/osx-arm64/python-lmdb-1.7.5-py311hc58e375_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python-tzdata-2025.2-pyhd8ed1ab_0.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/python_abi-3.11-8_cp311.conda
       - conda: https://conda.anaconda.org/conda-forge/noarch/pytz-2025.2-pyhd8ed1ab_0.conda
@@ -6880,6 +6883,49 @@ packages:
   - pkg:pypi/python-json-logger?source=hash-mapping
   size: 13383
   timestamp: 1677079727691
+- conda: https://conda.anaconda.org/conda-forge/linux-64/python-lmdb-1.7.5-py311hc665b79_0.conda
+  sha256: 94e6168e68d80c7517f5a5dce12711588ca8e16340939cdd0a39cee57502b53f
+  md5: 5c82e98250a18ed7e63c65fbe72639e1
+  depends:
+  - python
+  - libstdcxx >=14
+  - libgcc >=14
+  - __glibc >=2.17,<3.0.a0
+  - python_abi 3.11.* *_cp311
+  license: OLDAP-2.8
+  purls:
+  - pkg:pypi/lmdb?source=hash-mapping
+  size: 161339
+  timestamp: 1760510825906
+- conda: https://conda.anaconda.org/conda-forge/linux-aarch64/python-lmdb-1.7.5-py311h8e4e6a5_0.conda
+  sha256: 7c1073183d6ee81b5cd1a3d7e1951d27feed090040d7b581fea13f78deca517a
+  md5: 14a179dc7b51bd0e90c4d3c23fc771a8
+  depends:
+  - python
+  - python 3.11.* *_cpython
+  - libgcc >=14
+  - libstdcxx >=14
+  - libgcc >=14
+  - python_abi 3.11.* *_cp311
+  license: OLDAP-2.8
+  purls:
+  - pkg:pypi/lmdb?source=hash-mapping
+  size: 169892
+  timestamp: 1760513685664
+- conda: https://conda.anaconda.org/conda-forge/osx-arm64/python-lmdb-1.7.5-py311hc58e375_0.conda
+  sha256: eae942d2ff20e8bd288895a71a3dcfd3468094c5a57f64c5823f642bd497b9d5
+  md5: 6424160a78246679c9de89bb114c55d8
+  depends:
+  - python
+  - libcxx >=19
+  - __osx >=11.0
+  - python 3.11.* *_cpython
+  - python_abi 3.11.* *_cp311
+  license: OLDAP-2.8
+  purls:
+  - pkg:pypi/lmdb?source=hash-mapping
+  size: 156225
+  timestamp: 1760510912062
 - conda: https://conda.anaconda.org/conda-forge/noarch/python-tzdata-2025.2-pyhd8ed1ab_0.conda
   sha256: e8392a8044d56ad017c08fec2b0eb10ae3d1235ac967d0aab8bd7b41c4a5eaf0
   md5: 88476ae6ebd24f39261e0854ac244f33

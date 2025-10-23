@@ -54,7 +54,7 @@ def load_model(ckpt_path: str = "data/best.ckpt", params_path: str = "data/param
     _args = MARINAArgs(**params)
 
     # create fp loader according to args
-    _fp_loader = make_fp_loader(_args.fp_type, entropy_out_dim=_args.out_dim)
+    _fp_loader = make_fp_loader(_args.fp_type, entropy_out_dim=_args.out_dim, retrieval_path='data/retrieval.pkl')
 
     logger.info("Instantiating MARINA model")
     model = MARINA(_args, _fp_loader)

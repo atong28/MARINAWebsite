@@ -22,6 +22,18 @@
           window.currentResults = results;
         }
       }
+      // Persist main page state after results are displayed
+      try {
+        if (window.State && State.persistMain) {
+          const inputs = (typeof collectInputData === 'function') ? collectInputData() : {};
+          const smilesInput = (document.getElementById('smiles-input') || {}).value || '';
+          State.persistMain({
+            inputs,
+            smilesInput,
+            currentResults: results
+          });
+        }
+      } catch (e) {}
       resultsGrid.textContent = '';
       // Virtualize if many results
       if (results.length > 50) {
@@ -31,7 +43,7 @@
         for (let i = 0; i < maxResults; i++) {
           const resultData = results[i];
           const card = (global.ResultRenderer && global.ResultRenderer.createCard)
-            ? global.ResultRenderer.createCard(i + 1, resultData)
+            ? global.ResultRenderer.createCard(i + 1, resultData, { showAnalyze: true })
             : createFallbackCard(i + 1, resultData);
           resultsGrid.appendChild(card);
         }
@@ -59,27 +71,9 @@
       resultsGrid.appendChild(card);
     }
 
+    // No /meta endpoint; render minimal placeholders only
     for (let i = 0; i < maxResults; i++) {
-      const idx = indices[i];
-      const similarity = scores[i] || 0.0;
-      try {
-        const metaResponse = await fetch(`/meta/${idx}`);
-        if (!metaResponse.ok) {
-          updateResultCard(i, null, null, null, 'Failed to load metadata');
-          continue;
-        }
-        const meta = await metaResponse.json();
-        const smiles = meta.smiles;
-        if (!smiles) {
-          updateResultCard(i, null, null, null, 'No SMILES data available');
-          continue;
-        }
-        updateResultCard(i, idx, smiles, similarity, null);
-        await new Promise(resolve => setTimeout(resolve, 200));
-      } catch (error) {
-        console.warn(`Failed to process result ${idx}:`, error);
-        updateResultCard(i, null, null, null, 'Error loading data');
-      }
+      updateResultCard(i, null, '', scores[i] || 0.0, null);
     }
   }
 
@@ -93,7 +87,7 @@
       for (let i = nextIndex; i < end; i++) {
         const resultData = results[i];
         const card = (global.ResultRenderer && global.ResultRenderer.createCard)
-          ? global.ResultRenderer.createCard(i + 1, resultData)
+          ? global.ResultRenderer.createCard(i + 1, resultData, { showAnalyze: true })
           : createFallbackCard(i + 1, resultData);
         container.appendChild(card);
       }

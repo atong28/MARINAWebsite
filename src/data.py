@@ -49,7 +49,6 @@ class MARINADataset(Dataset):
                 if all(entry[f'has_{dtype}'] for dtype in self.requires)
             }
             logger.info(f'[MARINADataset] Purged {data_len - len(data)}/{data_len} items. {len(data)} items remain')
-            print(f'[MARINADataset] Dataset size: {len(data)}')
             if args.debug and len(data) > DEBUG_LEN:
                 logger.info(f'[MARINADataset] Debug mode activated. Data length set to {DEBUG_LEN}')
                 data = dict(islice(data.items(), DEBUG_LEN))

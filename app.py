@@ -27,7 +27,7 @@ from flask_cors import CORS
 from src.fp_loader import EntropyFPLoader
 from src import predictor
 from src.ranker import RankingSet
-from src.draw import draw_molecule, draw_fingerprint_changes, draw_similarity_comparison, get_fingerprint_differences
+from src.draw import draw_molecule, draw_fingerprint_changes, draw_similarity_comparison, get_fingerprint_differences, compute_bit_environments_batch
 from src.services.metadata_service import MetadataService
 from src.services.molecule_renderer import MoleculeRenderer
 from src.services.result_builder import build_result_card
@@ -51,6 +51,19 @@ CORS(app)  # Enable CORS for all routes
 try:
     from src.http import register_error_handlers
     register_error_handlers(app)
+except Exception:
+    pass
+
+# Optional request path logging for 404 tracing (debug only)
+try:
+    from src.config import HIGHLIGHT_DEBUG
+    if HIGHLIGHT_DEBUG:
+        @app.before_request
+        def _log_request_path():
+            try:
+                logger.info(f"REQ {request.method} {request.path}")
+            except Exception:
+                pass
 except Exception:
     pass
 
@@ -176,10 +189,7 @@ def initialize_model():
 # Initialize model once at startup (import time). Idempotent via predictor._model check.
 # Only initialize if not already initialized to prevent multiple initializations
 if not _model_initialized and not _model_loading:
-    logger.info("Starting model initialization at import time...")
     initialize_model()
-else:
-    logger.info(f"Model initialization skipped - initialized: {_model_initialized}, loading: {_model_loading}")
 
 # Preload metadata cache on startup (non-blocking)
 try:
@@ -312,18 +322,11 @@ def predict():
         
         if 'raw' in payload:
             raw_data = payload['raw']
-            logger.info(f"Predicting from raw data with k={k}")
-            logger.info(f"Raw data keys: {list(raw_data.keys())}")
-            
-            logger.info(f"About to call predict_from_raw with k={k} (type: {type(k)})")
-            logger.info(f"raw_data type: {type(raw_data)}, keys: {list(raw_data.keys())}")
             out = predictor.predict_from_raw(raw_data, k=k)
-            logger.info(f"Prediction completed successfully, output type: {type(out)}")
             
             if isinstance(out, tuple) and len(out) >= 2:
                 scores, indices = out[0], out[1]
                 pred_fp = out[2] if len(out) > 2 else None
-                logger.info(f"Prediction completed: {len(scores)} scores and {len(indices)} indices")
                 
                 # Get SMILES and molecular structures for all results
                 results = []
@@ -334,7 +337,7 @@ def predict():
                         if result_smiles:
                             try:
                                 fp_loader = ModelService.instance().get_fp_loader()
-                                pred_tensor = torch.tensor(pred_fp, dtype=torch.float) if pred_fp is not None else None
+                                pred_tensor = torch.tensor(pred_fp, dtype=torch.float32) if pred_fp is not None else None
                                 enhanced_svg = MoleculeRenderer.instance().render(
                                     result_smiles, predicted_fp=pred_tensor, fp_loader=fp_loader, img_size=MOLECULE_IMG_SIZE
                                 )
@@ -347,7 +350,56 @@ def predict():
                                     similarity_float = 0.0
                             except (ValueError, TypeError):
                                 similarity_float = 0.0
-                            results.append(build_result_card(idx, entry, similarity_float, enhanced_svg))
+                            card = build_result_card(idx, entry, similarity_float, enhanced_svg)
+                            # Also provide plain (non-highlight) depiction for analysis header
+                            try:
+                                plain_svg = MoleculeRenderer.instance().render(result_smiles, predicted_fp=None, fp_loader=None, img_size=MOLECULE_IMG_SIZE)
+                                if plain_svg:
+                                    card['plain_svg'] = plain_svg
+                            except Exception:
+                                pass
+                            # Attach highlight flags in debug mode
+                            try:
+                                from src.config import HIGHLIGHT_DEBUG
+                                if HIGHLIGHT_DEBUG:
+                                    dbg = MoleculeRenderer.instance().last_debug()
+                                    if dbg and isinstance(dbg, dict):
+                                        card['highlighted'] = bool(dbg.get('highlighted'))
+                                        card['highlight_debug'] = {k: dbg.get(k) for k in ('branch','reason')}
+                            except Exception:
+                                pass
+                            # Attach retrieved molecule bit indices for instant analysis indices display
+                            retrieved_indices = []
+                            try:
+                                from src.predictor import _rankingset_cache as _rs
+                                if _rs is not None:
+                                    if _rs.layout == torch.sparse_csr:
+                                        row_start = _rs.crow_indices()[idx]
+                                        row_end = _rs.crow_indices()[idx + 1]
+                                        if row_start < row_end:
+                                            col_indices = _rs.col_indices()[row_start:row_end]
+                                            retrieved_indices = col_indices.cpu().tolist()
+                                        else:
+                                            retrieved_indices = []
+                                    else:
+                                        row_tensor = _rs[idx].cpu()
+                                        retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
+                            except Exception:
+                                pass
+                            card['retrieved_molecule_fp_indices'] = retrieved_indices
+                            
+                            # Compute bit environments for all retrieved indices
+                            try:
+                                if retrieved_indices and fp_loader:
+                                    bit_environments = compute_bit_environments_batch(result_smiles, retrieved_indices, fp_loader)
+                                    card['bit_environments'] = bit_environments
+                                else:
+                                    card['bit_environments'] = {}
+                            except Exception as e:
+                                logger.warning(f"Failed to compute bit environments for result {idx}: {e}")
+                                card['bit_environments'] = {}
+                            
+                            results.append(card)
 
                 resp = {'results': results, 'total_count': len(results), 'offset': int(payload.get('offset', 0)), 'limit': int(payload.get('limit', len(results)))}
                 # Apply pagination slice on results
@@ -455,7 +507,7 @@ def smiles_search():
                     # Render molecule (enhanced if possible)
                     try:
                         fp_loader = ModelService.instance().get_fp_loader()
-                        query_tensor = torch.tensor(fp, dtype=torch.float)
+                        query_tensor = torch.tensor(fp, dtype=torch.float32)
                         enhanced_svg = MoleculeRenderer.instance().render(
                             result_smiles, predicted_fp=query_tensor, fp_loader=fp_loader, img_size=MOLECULE_IMG_SIZE
                         )
@@ -470,7 +522,54 @@ def smiles_search():
                     except (ValueError, TypeError):
                         similarity_float = 0.0
                     # Build card
-                    results.append(build_result_card(idx, entry, similarity_float, enhanced_svg))
+                    card = build_result_card(idx, entry, similarity_float, enhanced_svg)
+                    try:
+                        plain_svg = MoleculeRenderer.instance().render(result_smiles, predicted_fp=None, fp_loader=None, img_size=MOLECULE_IMG_SIZE)
+                        if plain_svg:
+                            card['plain_svg'] = plain_svg
+                    except Exception:
+                        pass
+                    try:
+                        from src.config import HIGHLIGHT_DEBUG
+                        if HIGHLIGHT_DEBUG:
+                            dbg = MoleculeRenderer.instance().last_debug()
+                            if dbg and isinstance(dbg, dict):
+                                card['highlighted'] = bool(dbg.get('highlighted'))
+                                card['highlight_debug'] = {k: dbg.get(k) for k in ('branch','reason')}
+                    except Exception:
+                        pass
+                    
+                    # Attach retrieved molecule bit indices and compute bit environments
+                    retrieved_indices = []
+                    try:
+                        if store is not None:
+                            if store.layout == torch.sparse_csr:
+                                row_start = store.crow_indices()[idx]
+                                row_end = store.crow_indices()[idx + 1]
+                                if row_start < row_end:
+                                    col_indices = store.col_indices()[row_start:row_end]
+                                    retrieved_indices = col_indices.cpu().tolist()
+                                else:
+                                    retrieved_indices = []
+                            else:
+                                row_tensor = store[idx].cpu()
+                                retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
+                    except Exception:
+                        pass
+                    card['retrieved_molecule_fp_indices'] = retrieved_indices
+                    
+                    # Compute bit environments for all retrieved indices
+                    try:
+                        if retrieved_indices and fp_loader:
+                            bit_environments = compute_bit_environments_batch(result_smiles, retrieved_indices, fp_loader)
+                            card['bit_environments'] = bit_environments
+                        else:
+                            card['bit_environments'] = {}
+                    except Exception as e:
+                        logger.warning(f"Failed to compute bit environments for SMILES search result {idx}: {e}")
+                        card['bit_environments'] = {}
+                    
+                    results.append(card)
 
         # Pagination
         offset = max(0, int(payload.get('offset', 0)))
@@ -638,21 +737,6 @@ def analyze():
                     need_to_clean_H=False
                 )
                 
-                # Debug logging for fingerprint differences
-                logger.info(f"=== FINGERPRINT DIFFERENCES DEBUG ===")
-                logger.info(f"Target SMILES: {target_smiles}")
-                logger.info(f"Original FP shape: {original_tensor.shape}, sum: {original_tensor.sum()}")
-                logger.info(f"Current FP shape: {current_tensor.shape}, sum: {current_tensor.sum()}")
-                logger.info(f"FP difference sum: {(current_tensor - original_tensor).sum()}")
-                logger.info(f"Added bits count: {len(fingerprint_diffs.get('added', []))}")
-                logger.info(f"Removed bits count: {len(fingerprint_diffs.get('removed', []))}")
-                logger.info(f"Unchanged bits count: {len(fingerprint_diffs.get('unchanged', []))}")
-                
-                if fingerprint_diffs.get('added'):
-                    logger.info(f"Added bits: {[bit['bit_id'] for bit in fingerprint_diffs['added'][:5]]}")
-                if fingerprint_diffs.get('removed'):
-                    logger.info(f"Removed bits: {[bit['bit_id'] for bit in fingerprint_diffs['removed'][:5]]}")
-                logger.info(f"=== END FINGERPRINT DIFFERENCES DEBUG ===")
                 
                 result['fingerprint_differences'] = fingerprint_diffs
             else:
@@ -772,8 +856,6 @@ def secondary_retrieval():
 
         if not predicted_fp or not retrieved_fp:
             return jsonify({'error': 'Missing required fields: predicted_fp, retrieved_fp'}), 400
-        
-        logger.info(f"Secondary retrieval with k={k}")
         
         # Convert to tensors
         predicted_tensor = torch.tensor(predicted_fp, dtype=torch.float32)

@@ -7,8 +7,9 @@ from rdkit.Chem import Draw, rdDepictor
 from rdkit.Chem.Draw import SimilarityMaps, rdMolDraw2D
 from rdkit.Geometry import Point2D
 from src.fp_loader import EntropyFPLoader
-from src.fp_utils import get_bitinfos
+from src.fp_utils import get_bitinfos, _mk_rdkit
 import torch
+from functools import lru_cache
 
 def compute_cos_sim(fp1: torch.Tensor, fp2: torch.Tensor, eps: float = 1e-12) -> float:
     """
@@ -131,20 +132,30 @@ def draw_molecule(
     # ---- Compute per-atom contributions ----
     atom_to_bit_infos, _ = get_bitinfos(retrieval_smiles, fp_loader.max_radius)
     retrieval_fp = fp_loader.build_mfp_from_bitinfo(atom_to_bit_infos)
-    base_similarity = compute_cos_sim(retrieval_fp, predicted_fp.cpu())
+    pred = predicted_fp.detach().to(dtype=torch.float32).cpu().flatten()
+    base_similarity = compute_cos_sim(retrieval_fp, pred)
 
     weights = []
     for atom_id in range(retrieval_mol.GetNumAtoms()):
         masked_fp = fp_loader.build_mfp_from_bitinfo(atom_to_bit_infos, [atom_id])
-        masked_sim = compute_cos_sim(predicted_fp.cpu(), masked_fp)
+        masked_sim = compute_cos_sim(pred, masked_fp)
         weights.append(base_similarity - masked_sim)
 
+    # Standardize weights and add robustness: if near-flat, fall back to boolean contribution
     weights, _ = SimilarityMaps.GetStandardizedWeights(weights)
+    try:
+        import numpy as _np
+        if _np.std(weights) < 1e-6:
+            bool_weights = [1.0 if atom_to_bit_infos.get(aid) else 0.0 for aid in range(retrieval_mol.GetNumAtoms())]
+            weights = bool_weights
+    except Exception:
+        pass
 
     # ---- Draw similarity map ----
     drawer = Draw.MolDraw2DCairo(img_size, img_size)
+    # Increase contour lines and grid density for stronger visual contrast
     draw_high_res_similarity_map(
-        retrieval_mol, weights, draw2d=drawer, contourLines=0, gridResolution=0.06
+        retrieval_mol, weights, draw2d=drawer, contourLines=5, gridResolution=0.04
     )
     drawer.FinishDrawing()
     img = _show_png(drawer.GetDrawingText())
@@ -192,29 +203,6 @@ def draw_fingerprint_changes(
     new_binary = (new_fp.cpu() > 0.5).float()
     fp_diff = new_binary - original_binary  # -1: removed, 0: no change, 1: added
     
-    # Debug: Check if the bit IDs from get_bitinfos match the fingerprint indices
-    print(f"Fingerprint length: {len(fp_diff)}")
-    print(f"Fingerprint indices range: 0 to {len(fp_diff)-1}")
-    if atom_to_bit_infos:
-        sample_atom_bits = list(atom_to_bit_infos.values())[0][:3] if list(atom_to_bit_infos.values())[0] else []
-        print(f"Sample bit IDs from get_bitinfos: {[bit_info[0] for bit_info in sample_atom_bits]}")
-        max_bit_id = max([bit_info[0] for atom_bits in atom_to_bit_infos.values() for bit_info in atom_bits]) if any(atom_to_bit_infos.values()) else -1
-        print(f"Max bit ID from get_bitinfos: {max_bit_id}")
-        print(f"Are bit IDs within fingerprint range? {max_bit_id < len(fp_diff) if max_bit_id >= 0 else 'No bits found'}")
-    
-    # Debug logging
-    print(f"=== CHANGE HIGHLIGHTING DEBUG ===")
-    print(f"Original FP shape: {original_fp.shape}, sum: {original_fp.sum()}")
-    print(f"New FP shape: {new_fp.shape}, sum: {new_fp.sum()}")
-    print(f"Original binary sum: {original_binary.sum()}")
-    print(f"New binary sum: {new_binary.sum()}")
-    print(f"FP diff sum: {fp_diff.sum()}")
-    print(f"FP diff non-zero count: {(fp_diff != 0).sum()}")
-    print(f"Retrieval SMILES: {retrieval_smiles}")
-    print(f"Max radius: {fp_loader.max_radius}")
-    print(f"Number of atoms: {retrieval_mol.GetNumAtoms()}")
-    print(f"Atom-to-bit mappings count: {len(atom_to_bit_infos)}")
-    
     # For each atom, compute its contribution to the fingerprint changes
     num_atoms = retrieval_mol.GetNumAtoms()
     change_weights = []
@@ -240,16 +228,6 @@ def draw_fingerprint_changes(
                     atom_contribution += 1.0  # Red highlighting
         
         change_weights.append(atom_contribution)
-    
-    # Debug: Check if any atoms have associated bits
-    print(f"Atom-to-bit mappings sample: {dict(list(atom_to_bit_infos.items())[:3])}")
-    print(f"Total bits mapped to atoms: {sum(len(bits) for bits in atom_to_bit_infos.values())}")
-    print(f"Sample changed bit indices: {[i for i, val in enumerate(fp_diff) if val != 0][:10]}")
-    
-    print(f"Change weights: {change_weights}")
-    print(f"Max change weight: {max(change_weights) if change_weights else 0}")
-    print(f"Non-zero change weights: {[w for w in change_weights if w > 0]}")
-    print(f"=== END CHANGE HIGHLIGHTING DEBUG ===")
     
     # Normalize weights to [0, 1] range
     if change_weights:
@@ -393,19 +371,6 @@ def get_fingerprint_differences(
     new_binary = (new_fp.cpu() > 0.5).float()
     fp_diff = new_binary - original_binary  # -1: removed, 0: no change, 1: added
     
-    # Debug logging
-    print(f"=== FINGERPRINT DIFFERENCES DEBUG ===")
-    print(f"Original FP shape: {original_fp.shape}, sum: {original_fp.sum()}")
-    print(f"New FP shape: {new_fp.shape}, sum: {new_fp.sum()}")
-    print(f"Original binary sum: {original_binary.sum()}")
-    print(f"New binary sum: {new_binary.sum()}")
-    print(f"FP diff sum: {fp_diff.sum()}")
-    print(f"FP diff non-zero count: {(fp_diff != 0).sum()}")
-    print(f"Retrieval SMILES: {retrieval_smiles}")
-    print(f"Max radius: {fp_loader.max_radius}")
-    print(f"Number of atoms: {retrieval_mol.GetNumAtoms()}")
-    print(f"Atom-to-bit mappings count: {len(atom_to_bit_infos)}")
-    
     # Categorize changes
     added_bits = []
     removed_bits = []
@@ -416,16 +381,6 @@ def get_fingerprint_differences(
     for atom_idx, bit_infos in atom_to_bit_infos.items():
         for bit_info in bit_infos:
             all_bit_infos.add(bit_info)
-    
-    # Debug: Check the all_bit_infos
-    print(f"Total bit infos from molecule: {len(all_bit_infos)}")
-    print(f"Sample bit infos: {list(all_bit_infos)[:3]}")
-    
-    # Check if we need to map bit IDs through the fingerprint loader's mapping
-    print(f"FP loader bitinfo_to_fp_index_map available: {hasattr(fp_loader, 'bitinfo_to_fp_index_map')}")
-    if hasattr(fp_loader, 'bitinfo_to_fp_index_map'):
-        print(f"FP loader mapping size: {len(fp_loader.bitinfo_to_fp_index_map)}")
-        print(f"Sample FP loader mapping: {dict(list(fp_loader.bitinfo_to_fp_index_map.items())[:3])}")
     
     # Check each bit info against the fingerprint differences
     for bit_info in all_bit_infos:
@@ -460,15 +415,6 @@ def get_fingerprint_differences(
             print(f"Error processing bit_info {bit_info}: {e}")
             continue
     
-    print(f"Added bits count: {len(added_bits)}")
-    print(f"Removed bits count: {len(removed_bits)}")
-    print(f"Unchanged bits count: {len(unchanged_bits)}")
-    if added_bits:
-        print(f"Sample added bits: {[bit['bit_id'] for bit in added_bits[:5]]}")
-    if removed_bits:
-        print(f"Sample removed bits: {[bit['bit_id'] for bit in removed_bits[:5]]}")
-    print(f"=== END FINGERPRINT DIFFERENCES DEBUG ===")
-    
     # Add substructure images to the bit data
     for bit_data in added_bits + removed_bits + unchanged_bits:
         try:
@@ -485,3 +431,180 @@ def get_fingerprint_differences(
         'removed': removed_bits,
         'unchanged': unchanged_bits
     }
+
+
+@lru_cache(maxsize=2000)
+def render_bit_preview_base64(smiles: str, bit_index: int, radius: int, img_size: int = 200) -> Optional[str]:
+    """
+    Render a small substructure preview image for a given fingerprint bit index.
+    Attempts to locate a BitInfo whose mapped fingerprint index equals bit_index.
+    Falls back to matching by raw bit_id when mapping is identity.
+    Returns a base64 data URL string or None.
+    """
+    try:
+        atom_to_bit_infos, all_bit_infos = get_bitinfos(smiles, radius)
+        if not all_bit_infos:
+            return None
+        # Try exact raw bit_id match first
+        candidates = [bi for bi in all_bit_infos if bi[0] == bit_index]
+        # If not found, there may be a mapping in the loader (handled by wrapper below)
+        target_frag_smiles = None
+        if candidates:
+            target_frag_smiles = candidates[0][2]
+        else:
+            # Heuristic: pick a fragment whose string hash mod big prime equals the index (very rare fallback)
+            for bi in all_bit_infos:
+                if (abs(hash(bi[2])) % 1000003) == (bit_index % 1000003):
+                    target_frag_smiles = bi[2]
+                    break
+        if not target_frag_smiles:
+            return None
+        img = draw_substructure(target_frag_smiles, img_size=img_size)
+        if not img:
+            return None
+        return pil_image_to_base64(img)
+    except Exception:
+        return None
+
+
+def render_bit_preview(smiles: str, bit_index: int, fp_loader: EntropyFPLoader, img_size: int = 200) -> Optional[str]:
+    """
+    Wrapper that uses the loader's mapping (if available) to find BitInfo candidates for a fp index.
+    Returns base64 data URL or None.
+    """
+    try:
+        # If loader exposes inverse mapping, use it
+        inverse = None
+        if hasattr(fp_loader, 'bitinfo_to_fp_index_map'):
+            try:
+                mapping = fp_loader.bitinfo_to_fp_index_map
+                inverse = {}
+                for bi, idx in mapping.items():
+                    inverse.setdefault(idx, []).append(bi)
+            except Exception:
+                inverse = None
+        if inverse and bit_index in inverse and inverse[bit_index]:
+            frag = inverse[bit_index][0][2]
+            img = draw_substructure(frag, img_size=img_size)
+            if img:
+                return pil_image_to_base64(img)
+        # Fallback to base function using raw bit ids
+        return render_bit_preview_base64(smiles, bit_index, getattr(fp_loader, 'max_radius', 2), img_size)
+    except Exception:
+        return None
+
+
+def compute_bit_environment(smiles: str, bit_index: int, radius: int):
+    """
+    Return dict with atom indices, bond index pairs, and normalized atom 2D coordinates for a given bit index.
+    Coordinates normalized to [0,1] based on drawing conformer.
+    """
+    mol = Chem.MolFromSmiles(smiles)
+    if mol is None:
+        return None
+    # Ensure 2D coords
+    rdDepictor.Compute2DCoords(mol)
+    conf = mol.GetConformer()
+    # Try to locate environment by bit id using RDKit bit info
+    gen, ao = _mk_rdkit(radius)
+    _ = gen.GetSparseFingerprint(mol, additionalOutput=ao)
+    info = ao.GetBitInfoMap()
+    atom_envs = info.get(bit_index)
+    if not atom_envs:
+        return None
+    # Use first occurrence
+    atom_idx, curr_radius = atom_envs[0]
+    env_bonds = Chem.FindAtomEnvironmentOfRadiusN(mol, curr_radius, atom_idx)
+    atom_set = set()
+    for bidx in env_bonds:
+        b = mol.GetBondWithIdx(bidx)
+        atom_set.add(b.GetBeginAtomIdx())
+        atom_set.add(b.GetEndAtomIdx())
+    atom_list = sorted(atom_set) if atom_set else [atom_idx]
+    # Compute normalized coords
+    xs = [conf.GetAtomPosition(i).x for i in range(mol.GetNumAtoms())]
+    ys = [conf.GetAtomPosition(i).y for i in range(mol.GetNumAtoms())]
+    minx, maxx = min(xs), max(xs)
+    miny, maxy = min(ys), max(ys)
+    spanx = max(maxx - minx, 1e-6)
+    spany = max(maxy - miny, 1e-6)
+    atom_coords = []
+    for i in range(mol.GetNumAtoms()):
+        p = conf.GetAtomPosition(i)
+        atom_coords.append({
+            'id': i,
+            'x': (p.x - minx) / spanx,
+            'y': (p.y - miny) / spany
+        })
+    bond_pairs = []
+    for bidx in env_bonds:
+        b = mol.GetBondWithIdx(bidx)
+        bond_pairs.append([b.GetBeginAtomIdx(), b.GetEndAtomIdx()])
+    return {
+        'atoms': atom_list,
+        'bonds': bond_pairs,
+        'coords': {'atoms': atom_coords}
+    }
+
+
+def compute_bit_environments_batch(smiles: str, fp_indices: List[int], fp_loader) -> Dict[int, dict]:
+    """
+    Compute bit environments for multiple fingerprint indices in batch.
+    Returns dict mapping fp_index -> env_data, only including bits with valid environments (omits null).
+    
+    Args:
+        smiles: SMILES string of the molecule
+        fp_indices: List of fingerprint indices to compute environments for
+        fp_loader: EntropyFPLoader instance with mapping information
+        
+    Returns:
+        Dict[int, dict]: Mapping from fp_index to environment data (only valid envs included)
+    """
+    if not fp_indices or not smiles:
+        return {}
+    
+    result = {}
+    max_radius = getattr(fp_loader, 'max_radius', 2)
+    
+    # Build mapping: fp_index -> (raw_bit_id, radius) for fast lookup
+    fp_to_raw = {}
+    
+    # Strategy 1: Use fp_index_to_bitinfo_map if available (fastest)
+    if hasattr(fp_loader, 'fp_index_to_bitinfo_map') and fp_loader.fp_index_to_bitinfo_map:
+        for fp_idx in fp_indices:
+            bi = fp_loader.fp_index_to_bitinfo_map.get(int(fp_idx))
+            if bi is not None and isinstance(bi, tuple) and len(bi) >= 4:
+                raw_bit_id = int(bi[0])
+                r = int(bi[3])
+                fp_to_raw[fp_idx] = (raw_bit_id, r)
+    
+    # Strategy 2: For unmapped indices, derive from SMILES bitinfos
+    unmapped = [idx for idx in fp_indices if idx not in fp_to_raw]
+    if unmapped and hasattr(fp_loader, 'bitinfo_to_fp_index_map') and fp_loader.bitinfo_to_fp_index_map:
+        atom_to_bitinfos, all_bit_infos = get_bitinfos(smiles, max_radius)
+        for cand in (all_bit_infos or []):
+            mapped_idx = fp_loader.bitinfo_to_fp_index_map.get(cand)
+            if mapped_idx is not None and mapped_idx in unmapped:
+                raw_bit_id = int(cand[0])
+                r = int(cand[3])
+                fp_to_raw[mapped_idx] = (raw_bit_id, r)
+                unmapped.remove(mapped_idx)
+    
+    # Strategy 3: Fallback - treat remaining indices as raw bit IDs
+    for fp_idx in unmapped:
+        fp_to_raw[fp_idx] = (int(fp_idx), max_radius)
+    
+    # Compute environments for all mapped bits
+    for fp_idx, (raw_bit_id, radius) in fp_to_raw.items():
+        env = compute_bit_environment(smiles, raw_bit_id, radius)
+        if env is not None:
+            result[fp_idx] = env
+        else:
+            # Try radius sweep as fallback
+            for r in range(max_radius, -1, -1):
+                env = compute_bit_environment(smiles, raw_bit_id, r)
+                if env is not None:
+                    result[fp_idx] = env
+                    break
+    
+    return result

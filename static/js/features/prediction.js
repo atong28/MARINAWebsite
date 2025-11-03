@@ -40,6 +40,10 @@
       }
 
       loading.style.display = 'none';
+      // Set flag to indicate results are from prediction
+      if (window.State && State.set) {
+        State.set('analysisSource', 'prediction');
+      }
       if (global.Results && global.Results.displayResults) {
         await global.Results.displayResults(result);
       }

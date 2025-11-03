@@ -744,29 +744,30 @@ let currentRetrievedFp = null;
 
 // Page navigation functions
 function openAnalysis(resultIndex) {
-    console.log('openAnalysis called with index:', resultIndex);
     let resultsSource = (window.State && State.get) ? State.get('currentResults', currentResults) : currentResults;
-    console.log('currentResults:', resultsSource);
     
     if (!resultsSource || !resultsSource[resultIndex]) {
-        console.error('No result data available for analysis');
         showMessage('No result data available for analysis', 'error');
         return;
     }
     
+    // Reset per-analysis caches/state
+    if (window.State && State.set) {
+        try { State.set('selectedBits', new Set()); } catch (e) {}
+    } else {
+        try { window.selectedBits = new Set(); } catch (e) {}
+    }
     currentAnalysisResult = resultsSource[resultIndex];
     if (window.State && State.set) State.set('currentAnalysisResult', currentAnalysisResult);
-    originalAnalysisData = collectInputData();
     
-    console.log('currentAnalysisResult:', currentAnalysisResult);
-    console.log('originalAnalysisData:', originalAnalysisData);
+    // Check if this is from SMILES search (check if analysisSource flag exists)
+    const isFromSmilesSearch = (window.State && State.get && State.get('analysisSource')) === 'smiles-search';
+    
+    originalAnalysisData = collectInputData();
     
     // Show analysis page
     const mainPage = document.getElementById('main-page');
     const analysisPage = document.getElementById('analysis-page');
-    
-    console.log('mainPage element:', mainPage);
-    console.log('analysisPage element:', analysisPage);
     
     if (mainPage) {
         mainPage.style.display = 'none';
@@ -775,11 +776,25 @@ function openAnalysis(resultIndex) {
         analysisPage.style.display = 'block';
     }
     
+    // Hide spectral search and secondary search sections if from SMILES search
+    if (isFromSmilesSearch) {
+        const analysisInputSection = document.querySelector('.analysis-input-section');
+        const secondaryRetrievalSection = document.getElementById('secondary-retrieval-section');
+        if (analysisInputSection) analysisInputSection.style.display = 'none';
+        if (secondaryRetrievalSection) secondaryRetrievalSection.style.display = 'none';
+    } else {
+        // Show sections for prediction-based analysis
+        const analysisInputSection = document.querySelector('.analysis-input-section');
+        if (analysisInputSection) analysisInputSection.style.display = 'block';
+    }
+    
     // Populate selected molecule info
     populateSelectedMolecule(currentAnalysisResult);
     
-    // Copy original data to analysis page
-    copyDataToAnalysisPage(originalAnalysisData);
+    // Copy original data to analysis page (only if not from SMILES search)
+    if (!isFromSmilesSearch) {
+        copyDataToAnalysisPage(originalAnalysisData);
+    }
     
     // Initially hide visualizations section
     hideAnalysisVisualizations();
@@ -789,7 +804,106 @@ function openAnalysis(resultIndex) {
         updateVisualizationsAnalysis();
     }
     
-    console.log('Analysis page should now be visible');
+    // Instantly compute and show predicted/retrieved bit indices
+    try {
+        // Clear stale retrievedFpIndices from State to prevent using wrong molecule's data
+        if (window.State && State.remove) {
+            State.remove('retrievedFpIndices');
+        }
+        const pred = (window.currentPredictedFp) || (window.State && State.get && State.get('currentPredictedFp'));
+        let predictedIdx = [];
+        if (pred && Array.isArray(pred)) {
+            for (let i = 0; i < pred.length; i++) if (pred[i] > 0.5) predictedIdx.push(i);
+        }
+        const retrievedIdx = (currentAnalysisResult && currentAnalysisResult.retrieved_molecule_fp_indices) || [];
+        try { console.debug('[openAnalysis] calling updateFingerprintIndices', { predictedCount: predictedIdx.length, retrievedCount: retrievedIdx.length }); } catch (e) {}
+        updateFingerprintIndices(predictedIdx, retrievedIdx);
+        
+        // Restore analysis state if same molecule was analyzed before
+        try {
+            if (window.State && State.restoreAnalysis) {
+                const restored = State.restoreAnalysis();
+                if (restored && restored.currentAnalysisResult) {
+                    const currentSmiles = (currentAnalysisResult.smiles || currentAnalysisResult.target_smiles);
+                    const restoredSmiles = (restored.currentAnalysisResult.smiles || restored.currentAnalysisResult.target_smiles);
+                    if (currentSmiles && restoredSmiles && currentSmiles === restoredSmiles) {
+                        // Same molecule - restore selections and unavailable flags
+                        if (restored.selectedBits && Array.isArray(restored.selectedBits)) {
+                            const sel = new Set(restored.selectedBits);
+                            if (window.State && State.set) State.set('selectedBits', sel);
+                            // Mark badges as selected
+                            document.querySelectorAll('.index-badge').forEach(el => {
+                                const bit = parseInt(el.textContent, 10);
+                                if (!isNaN(bit) && sel.has(bit)) {
+                                    el.classList.add('badge-selected');
+                                }
+                            });
+                        }
+                        // Mark unavailable bits (yellow) based on bit_environments
+                        const bitEnvs = restored.currentAnalysisResult && restored.currentAnalysisResult.bit_environments;
+                        if (bitEnvs && typeof bitEnvs === 'object') {
+                            const allBits = new Set([...(restored.predictedFpIndices || []), ...(restored.retrievedFpIndices || [])]);
+                            allBits.forEach(bit => {
+                                if (!bitEnvs[bit]) {
+                                    document.querySelectorAll('.index-badge').forEach(el => {
+                                        if (parseInt(el.textContent, 10) === bit) {
+                                            el.classList.add('badge-unavailable');
+                                            el.title = 'No substructure mapping available for this bit';
+                                        }
+                                    });
+                                }
+                            });
+                        }
+                        // Rebuild overlay if there are selected bits
+                        if (typeof rebuildSelectedOverlay === 'function') {
+                            setTimeout(() => rebuildSelectedOverlay(), 100);
+                        }
+                    }
+                }
+            }
+        } catch (e) {
+            console.warn('Failed to restore analysis state:', e);
+        }
+    } catch (e) {}
+
+    // Kick off secondary retrieval asynchronously with spinner
+    try {
+        const secondarySection = document.getElementById('secondary-retrieval-section');
+        const secondaryLoading = document.getElementById('secondary-retrieval-loading');
+        const secondaryGrid = document.getElementById('secondary-results-grid');
+        if (secondarySection) secondarySection.style.display = 'block';
+        if (secondaryLoading) secondaryLoading.style.display = 'flex';
+        if (secondaryGrid) secondaryGrid.innerHTML = '';
+        const predFp = (window.currentPredictedFp) || (window.State && State.get && State.get('currentPredictedFp')) || (currentAnalysisResult && currentAnalysisResult.predicted_fp) || null;
+        const retrievedFp = (currentAnalysisResult && currentAnalysisResult.retrieved_molecule_fp) || null;
+        if (predFp && retrievedFp) {
+            ApiClient.postSecondaryRetrieval({ predicted_fp: predFp, retrieved_fp: retrievedFp, k: 10 })
+                .then(resp => {
+                    if (secondaryLoading) secondaryLoading.style.display = 'none';
+                    if (!resp || !resp.results) return;
+                    if (secondaryGrid) {
+                        secondaryGrid.innerHTML = '';
+                        const arr = resp.results;
+                        if (!arr.length) {
+                            secondaryGrid.innerHTML = '<p class="no-results-message">No results found for remaining substructure.</p>';
+                        } else {
+                            for (let i = 0; i < arr.length; i++) {
+                                const card = (window.ResultRenderer && window.ResultRenderer.createCard)
+                                  ? window.ResultRenderer.createCard(i + 1, arr[i], { showAnalyze: false })
+                                  : createResultCard(i + 1, arr[i]);
+                                secondaryGrid.appendChild(card);
+                            }
+                        }
+                    }
+                })
+                .catch(() => { if (secondaryLoading) secondaryLoading.style.display = 'none'; });
+        } else {
+            if (secondaryLoading) secondaryLoading.style.display = 'none';
+        }
+    } catch (e) {}
+
+    // DO NOT auto-run analysis - let users manually trigger it when ready
+    // Auto-running would overwrite currentAnalysisResult and break highlighting
 }
 
 function goBackToMain() {
@@ -800,6 +914,37 @@ function goBackToMain() {
     // Reset analysis state
     currentAnalysisResult = null;
     originalAnalysisData = null;
+    // Clear overlay and indices UI to avoid stale DOM on next analysis
+    try {
+        const overlay = document.getElementById('selected-molecule-overlay-svg');
+        if (overlay && overlay.parentElement) overlay.parentElement.removeChild(overlay);
+    } catch (e) {}
+    try {
+        const pred = document.getElementById('predicted-fp-indices');
+        const retr = document.getElementById('retrieved-fp-indices');
+        if (pred) pred.textContent = '';
+        if (retr) retr.textContent = '';
+        const indicesSection = document.getElementById('fingerprint-indices-section');
+        if (indicesSection) {
+            // Move indices section back to original location (after analysis-visualizations-section)
+            // if it was moved to selected-molecule-info
+            const analysisLayout = document.querySelector('.analysis-layout');
+            const visualizationsSection = document.querySelector('.analysis-visualizations-section');
+            if (analysisLayout && visualizationsSection && indicesSection.parentElement !== analysisLayout) {
+                // Remove from current location (e.g., selected-molecule-info)
+                if (indicesSection.parentElement) {
+                    indicesSection.parentElement.removeChild(indicesSection);
+                }
+                // Insert after analysis-visualizations-section in analysis-layout
+                if (visualizationsSection.nextSibling) {
+                    analysisLayout.insertBefore(indicesSection, visualizationsSection.nextSibling);
+                } else {
+                    analysisLayout.appendChild(indicesSection);
+                }
+            }
+            indicesSection.style.display = 'none';
+        }
+    } catch (e) {}
 }
 
 function populateSelectedMolecule(result) {
@@ -807,13 +952,14 @@ function populateSelectedMolecule(result) {
     const info = document.getElementById('selected-molecule-info');
     const originalContainer = document.getElementById('original-molecule-visualization');
     
-    // Display molecule structure
+    // Display molecule structure (plain, non-highlighted preferred)
     let moleculeDisplay = '<div class="no-molecule">No structure available</div>';
-    if (result.svg) {
-        if (result.svg.startsWith('data:image/')) {
-            moleculeDisplay = `<img src="${result.svg}" alt="Molecular structure" class="molecule-image" style="max-width: 100%; max-height: 200px; border-radius: 4px;">`;
-        } else if (result.svg.startsWith('<svg') || result.svg.startsWith('<')) {
-            moleculeDisplay = result.svg;
+    const pick = result.plain_svg || result.svg;
+    if (pick) {
+        if (pick.startsWith && pick.startsWith('data:image/')) {
+            moleculeDisplay = `<img src="${pick}" alt="Molecular structure" class="molecule-image" style="max-width: 100%; max-height: 200px; border-radius: 4px;">`;
+        } else if (pick.startsWith && (pick.startsWith('<svg') || pick.startsWith('<'))) {
+            moleculeDisplay = pick;
         }
     }
     container.innerHTML = moleculeDisplay;
@@ -853,7 +999,16 @@ function populateSelectedMolecule(result) {
         }
     }
     
-    // Clear and rebuild info
+    // Preserve fingerprint-indices-section if it exists as a child (from previous analysis)
+    const indicesSection = document.getElementById('fingerprint-indices-section');
+    let preservedIndicesSection = null;
+    if (indicesSection && indicesSection.parentElement === info) {
+        // Remove it from parent before clearing, so it's not destroyed
+        preservedIndicesSection = indicesSection;
+        info.removeChild(indicesSection);
+    }
+    
+    // Clear and rebuild info (now safe to clear since indices section is removed)
     info.textContent = '';
     const nameDiv = document.createElement('div');
     nameDiv.className = 'molecule-name-display';
@@ -904,6 +1059,11 @@ function populateSelectedMolecule(result) {
         }
     }
     info.appendChild(linksDiv);
+    
+    // Re-append preserved indices section if it was saved
+    if (preservedIndicesSection) {
+        info.appendChild(preservedIndicesSection);
+    }
 }
 
 function copyDataToAnalysisPage(data) {
@@ -1197,11 +1357,13 @@ async function processAnalysisResults(result) {
             secondaryGrid.innerHTML = '';
             if (result.secondary_results.length === 0) {
                 secondaryGrid.innerHTML = '<p class="no-results-message">No results found for remaining substructure.</p>';
-            } else {
+    } else {
                 const secondaryResults = result.secondary_results;
                 for (let i = 0; i < secondaryResults.length; i++) {
                     const resultData = secondaryResults[i];
-                    const card = createResultCard(i + 1, resultData);
+                    const card = (window.ResultRenderer && window.ResultRenderer.createCard)
+                      ? window.ResultRenderer.createCard(i + 1, resultData, { showAnalyze: false })
+                      : createResultCard(i + 1, resultData);
                     secondaryGrid.appendChild(card);
                 }
             }
@@ -1213,18 +1375,205 @@ async function processAnalysisResults(result) {
 }
 
 function updateFingerprintIndices(predictedIndices, retrievedIndices) {
-    console.log('updateFingerprintIndices called');
-    console.log('Predicted indices:', predictedIndices);
-    console.log('Retrieved indices:', retrievedIndices);
-    
+    try { 
+        console.debug('[updateFingerprintIndices] start', { 
+            predictedCount: (predictedIndices||[]).length, 
+            retrievedCount: (retrievedIndices||[]).length,
+            predictedIndices: (predictedIndices||[]).slice(0, 10),
+            retrievedIndices: (retrievedIndices||[]).slice(0, 10)
+        }); 
+    } catch (e) {}
     const indicesSection = document.getElementById('fingerprint-indices-section');
-    if (indicesSection) {
-        indicesSection.style.display = 'block';
+    if (!indicesSection) {
+        try { console.error('[updateFingerprintIndices] fingerprint-indices-section not found in DOM'); } catch (e) {}
+        return; // Cannot proceed without the section
     }
     
+    indicesSection.style.display = 'block';
+    // Move indices section under selected molecule info to keep always visible
+    const infoHost = document.getElementById('selected-molecule-info');
+    if (infoHost && indicesSection.parentElement !== infoHost) {
+        infoHost.appendChild(indicesSection);
+    }
+    
+    // Verify containers exist before building lists
+    const predictedContainer = document.getElementById('predicted-fp-indices');
+    const retrievedContainer = document.getElementById('retrieved-fp-indices');
+    if (!predictedContainer || !retrievedContainer) {
+        try { 
+            console.error('[updateFingerprintIndices] containers not found', { 
+                predicted: !!predictedContainer, 
+                retrieved: !!retrievedContainer,
+                indicesSectionExists: !!indicesSection,
+                indicesSectionParent: indicesSection.parentElement ? indicesSection.parentElement.id : 'none'
+            }); 
+        } catch (e) {}
+        return; // Cannot proceed without containers
+    }
+    
+    // Helper: rebuild combined overlay for all selected bits
+    const rebuildSelectedOverlay = () => {
+        try { console.debug('[overlay] rebuildSelectedOverlay invoked'); } catch (e) {}
+        const container = document.getElementById('selected-molecule-container');
+        if (!container) { try { console.warn('[overlay] container not found'); } catch (e) {} return; }
+        // Ensure positioning so overlay can sit absolutely
+        try { if (getComputedStyle(container).position === 'static') { container.style.position = 'relative'; } } catch (e) {}
+        let svg = document.getElementById('selected-molecule-overlay-svg');
+        if (!svg) {
+            svg = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+            svg.setAttribute('id', 'selected-molecule-overlay-svg');
+            svg.style.position = 'absolute';
+            svg.style.left = '0';
+            svg.style.top = '0';
+            svg.style.width = '100%';
+            svg.style.height = '100%';
+            svg.style.pointerEvents = 'none';
+            container.appendChild(svg);
+            try { console.debug('[overlay] created overlay svg'); } catch (e) {}
+        }
+        while (svg.firstChild) svg.removeChild(svg.firstChild);
+        const selectedSet = (window.State && State.get && State.get('selectedBits')) || new Set();
+        if (!selectedSet || selectedSet.size === 0) { try { console.debug('[overlay] no selected bits; removing overlay'); } catch (e) {} svg.remove(); return; }
+        const stateRes = (window.State && State.get && State.get('currentAnalysisResult')) || (window.currentAnalysisResult);
+        const smiles = stateRes && (stateRes.smiles || stateRes.target_smiles);
+        if (!smiles) { try { console.warn('[overlay] no smiles present'); } catch (e) {} return; }
+        const bitEnvironments = stateRes && stateRes.bit_environments;
+        if (!bitEnvironments || typeof bitEnvironments !== 'object') {
+            try { console.warn('[overlay] no bit_environments available'); } catch (e) {}
+            return;
+        }
+        // Compute drawing area based on actual rendered molecule element bounds (to avoid padding/aspect mismatch)
+        const molEl = container.querySelector('svg, img');
+        const cRect = container.getBoundingClientRect();
+        let offsetX = 0, offsetY = 0, drawW = container.clientWidth, drawH = container.clientHeight;
+        if (molEl && molEl.tagName.toLowerCase() === 'svg') {
+            const svgRect = molEl.getBoundingClientRect();
+            const viewBox = (molEl.getAttribute('viewBox') || '').split(/\s+/).map(Number);
+            let vbX=0, vbY=0, vbW=svgRect.width, vbH=svgRect.height;
+            if (viewBox.length === 4 && viewBox.every(v => !isNaN(v))) {
+                [vbX, vbY, vbW, vbH] = viewBox;
+            }
+            // Union bbox of all paths (bonds) to estimate content box (padding-aware)
+            let minX=Infinity, minY=Infinity, maxX=-Infinity, maxY=-Infinity;
+            const paths = molEl.querySelectorAll('path');
+            paths.forEach(p => {
+                try {
+                    const b = p.getBBox();
+                    if (b && isFinite(b.x) && isFinite(b.y) && isFinite(b.width) && isFinite(b.height)) {
+                        minX = Math.min(minX, b.x);
+                        minY = Math.min(minY, b.y);
+                        maxX = Math.max(maxX, b.x + b.width);
+                        maxY = Math.max(maxY, b.y + b.height);
+                    }
+                } catch (e) {}
+            });
+            if (isFinite(minX) && isFinite(minY) && isFinite(maxX) && isFinite(maxY)) {
+                const pxPerUnitX = svgRect.width / vbW;
+                const pxPerUnitY = svgRect.height / vbH;
+                offsetX = (svgRect.left - cRect.left) + (minX - vbX) * pxPerUnitX;
+                offsetY = (svgRect.top - cRect.top) + (minY - vbY) * pxPerUnitY;
+                drawW = Math.max(1, (maxX - minX) * pxPerUnitX);
+                drawH = Math.max(1, (maxY - minY) * pxPerUnitY);
+            } else {
+                offsetX = Math.max(0, svgRect.left - cRect.left);
+                offsetY = Math.max(0, svgRect.top - cRect.top);
+                drawW = Math.max(1, Math.floor(svgRect.width));
+                drawH = Math.max(1, Math.floor(svgRect.height));
+            }
+        } else if (molEl) {
+            const mRect = molEl.getBoundingClientRect();
+            offsetX = Math.max(0, mRect.left - cRect.left);
+            offsetY = Math.max(0, mRect.top - cRect.top);
+            drawW = Math.max(1, Math.floor(mRect.width));
+            drawH = Math.max(1, Math.floor(mRect.height));
+        }
+        try { console.debug('[overlay] drawing with dims', { w: drawW, h: drawH, offsetX, offsetY, selectedBits: Array.from(selectedSet) }); } catch (e) {}
+        const drawEnv = (env) => {
+            if (!(env && env.coords && Array.isArray(env.coords.atoms))) return;
+            const coords = env.coords.atoms;
+            const pos = (i) => {
+                const c = coords.find(a => a.id === i);
+                if (!c) return null;
+                return { x: offsetX + (c.x * drawW), y: offsetY + ((1 - c.y) * drawH) };
+            };
+            (env.bonds || []).forEach(pair => {
+                const a = pair[0], b = pair[1];
+                const pa = pos(a), pb = pos(b);
+                if (!pa || !pb) return;
+                const line = document.createElementNS('http://www.w3.org/2000/svg', 'line');
+                line.setAttribute('x1', String(pa.x));
+                line.setAttribute('y1', String(pa.y));
+                line.setAttribute('x2', String(pb.x));
+                line.setAttribute('y2', String(pb.y));
+                line.setAttribute('stroke', 'rgba(16,185,129,0.7)');
+                line.setAttribute('stroke-width', '4');
+                svg.appendChild(line);
+            });
+            (env.atoms || []).forEach(a => {
+                const p = pos(a);
+                if (!p) return;
+                const circ = document.createElementNS('http://www.w3.org/2000/svg', 'circle');
+                circ.setAttribute('cx', String(p.x));
+                circ.setAttribute('cy', String(p.y));
+                circ.setAttribute('r', '10');
+                circ.setAttribute('fill', 'rgba(16,185,129,0.25)');
+                circ.setAttribute('stroke', 'rgba(16,185,129,0.7)');
+                circ.setAttribute('stroke-width', '2');
+                svg.appendChild(circ);
+            });
+        };
+        // For each selected bit, read env from bit_environments and draw
+        const bits = Array.from(selectedSet);
+        bits.forEach(bit => {
+            const env = bitEnvironments[bit];
+            if (env) {
+                try { console.debug('[overlay] using env for bit', bit); } catch (e) {}
+                drawEnv(env);
+            } else {
+                try { console.debug('[overlay] no env available for bit', bit); } catch (e) {}
+            }
+        });
+    };
+
+    // Rebuild overlay on resize (debounced)
+    try {
+        if (!window._overlayResizeBound) {
+            window._overlayResizeBound = true;
+            let _t = null;
+            window.addEventListener('resize', () => {
+                if (_t) clearTimeout(_t);
+                _t = setTimeout(() => {
+                    if (typeof rebuildSelectedOverlay === 'function') rebuildSelectedOverlay();
+                }, 150);
+            });
+        }
+    } catch (e) {}
+
     const buildIndicesList = (container, indices, typeKey) => {
-        if (!container) return;
+        if (!container) {
+            try { console.warn('[buildIndicesList] container not found for', typeKey); } catch (e) {}
+            return;
+        }
         container.textContent = '';
+        try { console.debug('[buildIndicesList] building', typeKey, { indicesCount: (indices||[]).length, retrievedIndicesCount: (retrievedIndices||[]).length }); } catch (e) {}
+        const smilesForPreview = (window.currentAnalysisResult && window.currentAnalysisResult.smiles) || (window.State && State.get && State.get('currentAnalysisResult') && State.get('currentAnalysisResult').smiles) || null;
+        const presentSet = new Set(indices || []);
+        const selectedSet = (window.State && State.get && State.get('selectedBits')) || new Set();
+        if (window.State && State.set) State.set('selectedBits', selectedSet);
+        const isPredicted = typeKey === 'predicted';
+        // Use retrievedIndices from closure (updateFingerprintIndices parameter), not from State
+        // This ensures we use the current molecule's indices, not stale data from previous analysis
+        const retrievedSet = new Set(retrievedIndices);
+        // Update State when building retrieved list, and when building predicted list if State is empty
+        if (typeKey === 'retrieved') {
+            // Update State with current molecule's retrieved indices for restore logic
+            if (window.State && State.set) {
+                State.set('retrievedFpIndices', retrievedIndices);
+            }
+        } else if (isPredicted && window.State && !State.get('retrievedFpIndices')) {
+            // Cache retrieved indices for disable logic if not already set
+            State.set('retrievedFpIndices', retrievedIndices);
+        }
         if (indices && Array.isArray(indices) && indices.length > 0) {
             const sorted = [...indices].sort((a, b) => a - b);
             const count = sorted.length;
@@ -1239,12 +1588,53 @@ function updateFingerprintIndices(predictedIndices, retrievedIndices) {
             
             const valuesDiv = document.createElement('div');
             valuesDiv.className = 'indices-values';
-            preview.forEach((idx) => {
+            const makeBadge = (idx) => {
                 const badge = document.createElement('span');
                 badge.className = 'index-badge';
                 badge.textContent = String(idx);
-                valuesDiv.appendChild(badge);
-            });
+                const isInRetrieved = retrievedSet.has(idx);
+                if (isPredicted && !isInRetrieved) {
+                    badge.classList.add('badge-disabled');
+                    badge.title = 'Not present in selected molecule';
+                } else {
+                    if (selectedSet.has(idx)) badge.classList.add('badge-selected');
+                    badge.addEventListener('click', () => {
+                        try { console.debug('[bits] click', { type: typeKey, bit: idx }); } catch (e) {}
+                        // Check if bit has env available (from embedded data)
+                        const stateRes = (window.State && State.get && State.get('currentAnalysisResult')) || (window.currentAnalysisResult);
+                        const bitEnvs = stateRes && stateRes.bit_environments;
+                        const hasEnv = bitEnvs && bitEnvs[idx];
+                        if (!hasEnv) {
+                            // Bit has no env - mark as unavailable but don't allow selection
+                            badge.classList.add('badge-unavailable');
+                            badge.title = 'No substructure mapping available for this bit';
+                            return;
+                        }
+                        const currentlySelected = selectedSet.has(idx);
+                        if (currentlySelected) {
+                            selectedSet.delete(idx);
+                            badge.classList.remove('badge-selected');
+                        } else {
+                            selectedSet.add(idx);
+                            badge.classList.add('badge-selected');
+                        }
+                        if (window.State && State.set) State.set('selectedBits', selectedSet);
+                        // Mirror selection across both lists if bit exists in both
+                        document.querySelectorAll(`.index-badge`).forEach(el => {
+                            if (parseInt(el.textContent, 10) === idx) {
+                                if (selectedSet.has(idx)) el.classList.add('badge-selected'); else el.classList.remove('badge-selected');
+                            }
+                        });
+                        // Rebuild overlay for all selected bits
+                        if (typeof rebuildSelectedOverlay === 'function') {
+                            try { console.debug('[overlay] rebuilding after click'); } catch (e) {}
+                            rebuildSelectedOverlay();
+                        }
+                    });
+                }
+                return badge;
+            };
+            preview.forEach((idx) => { valuesDiv.appendChild(makeBadge(idx)); });
             if (hasMore) {
                 const more = document.createElement('span');
                 more.className = 'index-more';
@@ -1257,12 +1647,7 @@ function updateFingerprintIndices(predictedIndices, retrievedIndices) {
                 const fullDiv = document.createElement('div');
                 fullDiv.className = 'indices-full';
                 fullDiv.style.display = 'none';
-                sorted.forEach((idx) => {
-                    const badge = document.createElement('span');
-                    badge.className = 'index-badge';
-                    badge.textContent = String(idx);
-                    fullDiv.appendChild(badge);
-                });
+                sorted.forEach((idx) => { fullDiv.appendChild(makeBadge(idx)); });
                 container.appendChild(fullDiv);
                 
                 const button = document.createElement('button');
@@ -1289,8 +1674,41 @@ function updateFingerprintIndices(predictedIndices, retrievedIndices) {
         }
     };
     
-    buildIndicesList(document.getElementById('predicted-fp-indices'), predictedIndices, 'predicted');
-    buildIndicesList(document.getElementById('retrieved-fp-indices'), retrievedIndices, 'retrieved');
+    // Build indices lists (containers already verified above)
+    buildIndicesList(predictedContainer, predictedIndices, 'predicted');
+    buildIndicesList(retrievedContainer, retrievedIndices, 'retrieved');
+
+    // Mark unavailable bits in yellow based on bit_environments
+    try {
+        const stateRes = (window.State && State.get && State.get('currentAnalysisResult')) || (window.currentAnalysisResult);
+        const bitEnvs = stateRes && stateRes.bit_environments;
+        if (bitEnvs && typeof bitEnvs === 'object') {
+            const allBits = new Set([...(predictedIndices||[]), ...(retrievedIndices||[])]);
+            allBits.forEach(bit => {
+                if (!bitEnvs[bit]) {
+                    // Mark badges for this bit as unavailable (yellow)
+                    document.querySelectorAll('.index-badge').forEach(el => {
+                        if (parseInt(el.textContent, 10) === bit) {
+                            el.classList.add('badge-unavailable');
+                            el.title = 'No substructure mapping available for this bit';
+                        }
+                    });
+                }
+            });
+        }
+        // Persist analysis state
+        try {
+            if (window.State && State.persistAnalysis) {
+                const selected = Array.from((window.State && State.get && State.get('selectedBits')) || new Set());
+                State.persistAnalysis({
+                    currentAnalysisResult: stateRes,
+                    predictedFpIndices: predictedIndices || [],
+                    retrievedFpIndices: retrievedIndices || [],
+                    selectedBits: selected
+                });
+            }
+        } catch (e) {}
+    } catch (e) {}
 }
 
 async function updateSimilarityVisualization(imageData) {
@@ -1346,13 +1764,10 @@ async function updateChangeVisualization(imageData) {
 }
 
 function updateFingerprintDifferences(differences) {
-    console.log('updateFingerprintDifferences called with:', differences);
     
     const fingerprintSection = document.querySelector('.fingerprint-differences-section');
-    console.log('Fingerprint section found:', fingerprintSection);
     if (fingerprintSection) {
         fingerprintSection.style.display = 'block';
-        console.log('Fingerprint section made visible');
     }
     
     const addedContainer = document.getElementById('added-bits-list');
@@ -1440,8 +1855,6 @@ async function runSecondaryRetrieval(predictedFp, retrievedFp, k = 10) {
         return;
     }
     
-    console.log('Running secondary retrieval with k=', k);
-    
     // Show loading state
     const secondarySection = document.getElementById('secondary-retrieval-section');
     if (secondarySection) {
@@ -1500,7 +1913,9 @@ async function runSecondaryRetrieval(predictedFp, retrievedFp, k = 10) {
                     const secondaryResults = result.results;
                     for (let i = 0; i < secondaryResults.length; i++) {
                         const resultData = secondaryResults[i];
-                        const card = createResultCard(i + 1, resultData);
+                        const card = (window.ResultRenderer && window.ResultRenderer.createCard)
+                          ? window.ResultRenderer.createCard(i + 1, resultData, { showAnalyze: false })
+                          : createResultCard(i + 1, resultData);
                         secondaryGrid.appendChild(card);
                     }
                 }
@@ -1795,6 +2210,50 @@ function switchMainTab(tabName) {
 
 // Initialize the application
 document.addEventListener('DOMContentLoaded', function() {
+    // Restore main page state if available
+    try {
+        if (window.State && State.restoreMain) {
+            const snap = State.restoreMain();
+            if (snap) {
+                // Restore inputs
+                if (snap.inputs && typeof loadDataIntoTable === 'function') {
+                    if (snap.inputs.hsqc && Array.isArray(snap.inputs.hsqc)) {
+                        loadDataIntoTable('hsqc', snap.inputs.hsqc, 3);
+                    }
+                    if (snap.inputs.h_nmr && Array.isArray(snap.inputs.h_nmr)) {
+                        loadDataIntoTable('h_nmr', snap.inputs.h_nmr, 1);
+                    }
+                    if (snap.inputs.c_nmr && Array.isArray(snap.inputs.c_nmr)) {
+                        loadDataIntoTable('c_nmr', snap.inputs.c_nmr, 1);
+                    }
+                    if (snap.inputs.mass_spec && Array.isArray(snap.inputs.mass_spec)) {
+                        loadDataIntoTable('mass_spec', snap.inputs.mass_spec, 2);
+                    }
+                }
+                const mwInput = document.getElementById('mw-input');
+                if (mwInput && snap.inputs && snap.inputs.mw) {
+                    mwInput.value = snap.inputs.mw;
+                }
+                // Restore SMILES input
+                const smilesInput = document.getElementById('smiles-input');
+                if (smilesInput && snap.smilesInput) {
+                    smilesInput.value = snap.smilesInput;
+                }
+                // Restore results if available
+                if (snap.currentResults && Array.isArray(snap.currentResults) && snap.currentResults.length > 0) {
+                    if (window.Results && Results.displayResults) {
+                        window.Results.displayResults({ results: snap.currentResults });
+                    }
+                    if (window.State && State.set) {
+                        State.set('currentResults', snap.currentResults);
+                    }
+                }
+            }
+        }
+    } catch (e) {
+        console.warn('Failed to restore main page state:', e);
+    }
+    
     // Check backend status after a short delay to allow page to render first
     setTimeout(() => {
         if (window.Health && Health.updateBackendStatus) Health.updateBackendStatus();
@@ -1850,12 +2309,12 @@ document.addEventListener('DOMContentLoaded', function() {
     if (window.Health && typeof window.Health.startPolling === 'function') {
         window.Health.startPolling(10000);
     } else {
-        const statusCheckInterval = setInterval(async () => {
-            try {
+    const statusCheckInterval = setInterval(async () => {
+        try {
                 if (window.Health && Health.updateBackendStatus) await Health.updateBackendStatus();
             } catch (e) {
                 if (window.Health && Health.updateBackendStatus) Health.updateBackendStatus();
-            }
-        }, 10000);
+        }
+    }, 10000);
     }
 });

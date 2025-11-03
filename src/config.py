@@ -11,6 +11,7 @@ FP_THRESHOLD = float(os.getenv("FP_THRESHOLD", "0.5"))
 MOLECULE_IMG_SIZE = int(os.getenv("MOLECULE_IMG_SIZE", "400"))
 ENABLE_RENDERING_CACHE = os.getenv("ENABLE_RENDERING_CACHE", "true").lower() == "true"
 RENDERING_CACHE_SIZE = int(os.getenv("RENDERING_CACHE_SIZE", "1000"))
+HIGHLIGHT_DEBUG = os.getenv("HIGHLIGHT_DEBUG", "false").lower() == "true"
 
 # RDKit
 RDKIT_ENABLED = os.getenv("RDKIT_ENABLED", "true").lower() == "true"

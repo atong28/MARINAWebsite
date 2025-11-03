@@ -968,6 +968,16 @@ body {
     font-size: 0.875rem;
 }
 
+.chip {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 2px 6px;
+    border-radius: 10px;
+    font-size: 0.7rem;
+}
+.chip-ok { background: #d1fae5; color: #065f46; border: 1px solid #34d399; }
+.chip-warn { background: #fee2e2; color: #7f1d1d; border: 1px solid #fecaca; }
+
 .card-body {
     color: var(--text-secondary);
 }
@@ -1794,6 +1804,7 @@ body {
     border: 2px solid var(--border-color);
     border-radius: var(--radius-md);
     overflow: hidden;
+    position: relative;
 }
 
 .molecule-container .molecule-image {
@@ -1865,6 +1876,7 @@ body {
     margin: 0.15rem;
     font-size: 0.75rem;
     font-weight: 600;
+    cursor: pointer;
 }
 
 .index-more {
@@ -1879,6 +1891,46 @@ body {
     font-size: 0.85rem;
     margin-bottom: 0.5rem;
 }
+
+#selected-molecule-overlay {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    width: 120px;
+    height: 120px;
+    transform: translate(-50%, -50%);
+    background: rgba(16, 185, 129, 0.25);
+    border: 2px solid rgba(16, 185, 129, 0.6);
+    border-radius: 50%;
+    pointer-events: none;
+    display: none;
+}
+
+.badge-selected {
+    background: #d1fae5;
+    border-color: #34d399;
+    color: #065f46;
+}
+
+.badge-disabled {
+    background: #fee2e2;
+    border-color: #fecaca;
+    color: #991b1b;
+    opacity: 0.6;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.index-badge.badge-unavailable {
+    background: #fef3c7; /* amber-100 */
+    border-color: #f59e0b; /* amber-500 */
+    color: #92400e; /* amber-800 */
+    opacity: 0.9;
+    cursor: not-allowed;
+    pointer-events: none;
+}
+
+.bit-tooltip img { display: block; }
 
 .fingerprint-differences-section h2 {
     margin-bottom: 1.5rem;

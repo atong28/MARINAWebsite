@@ -89,8 +89,6 @@ class CoordinateEncoder(torch.nn.Module):
         super().__init__()
         assert (sum(dim_coords) == dim_model)
         if wavelength_bounds:
-            print(wavelength_bounds)
-            print(dim_coords)
             assert (len(wavelength_bounds) == len(dim_coords))
 
         self.positional_encoders = []
@@ -104,10 +102,8 @@ class CoordinateEncoder(torch.nn.Module):
                     min_wavelength=min_wavelength,
                     max_wavelength=max_wavelength
                 )
-                print(f"Pushed an encoder with bounds {min_wavelength}, {max_wavelength}")
             else:
                 p = PositionalEncoder(dim_model=dim)
-                print(f"Pushed an encoder with no defined bounds")
             self.positional_encoders.append(p)
 
     def forward(self, X):

@@ -23,6 +23,10 @@
         throw new Error(result.error);
       }
       loading.style.display = 'none';
+      // Set flag to indicate results are from SMILES search
+      if (window.State && State.set) {
+        State.set('analysisSource', 'smiles-search');
+      }
       if (global.Results && global.Results.displayResults) {
         await global.Results.displayResults(result);
       }

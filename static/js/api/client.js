@@ -6,11 +6,14 @@
     const controller = new AbortController();
     const id = setTimeout(() => controller.abort(), timeoutMs);
     try {
+      try { console.debug('[api] request', { url, method: (opts && opts.method) || 'GET' }); } catch (e) {}
       const res = await fetch(url, { ...opts, signal: controller.signal });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) {
         const msg = data && data.error ? data.error : `Request failed (${res.status})`;
-        throw new Error(msg);
+        const err = new Error(msg);
+        try { console.error('[api] error', { url, status: res.status, body: data }); } catch (e) {}
+        throw err;
       }
       return data;
     } finally {
@@ -47,6 +50,7 @@
   }
 
   async function postSecondaryRetrieval(body) {
+    try { console.debug('[api] postSecondaryRetrieval payload', body); } catch (e) {}
     return await fetchJson('/secondary-retrieval', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

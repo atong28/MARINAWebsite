@@ -1,6 +1,7 @@
 // Result card renderer (DOM-safe)
 (function(global) {
-  function createCard(position, resultData) {
+  function createCard(position, resultData, options = {}) {
+    const showAnalyze = options.showAnalyze !== false;
     const card = document.createElement('div');
     card.className = 'result-card';
 
@@ -25,6 +26,7 @@
     score.textContent = `${similarityPercent}%`;
     header.appendChild(title);
     header.appendChild(score);
+    // Removed debug highlight chip from main result cards per UX requirements
     card.appendChild(header);
 
     // Body
@@ -129,17 +131,19 @@
     body.appendChild(simRow);
 
     // Actions
-    const actions = document.createElement('div');
-    actions.className = 'card-actions';
-    const analyzeBtn = document.createElement('button');
-    analyzeBtn.className = 'btn btn-primary btn-sm';
-    const icon = document.createElement('i');
-    icon.className = 'fas fa-microscope';
-    analyzeBtn.appendChild(icon);
-    analyzeBtn.appendChild(document.createTextNode(' Analyze'));
-    analyzeBtn.addEventListener('click', function() { openAnalysis(position - 1); });
-    actions.appendChild(analyzeBtn);
-    body.appendChild(actions);
+    if (showAnalyze) {
+      const actions = document.createElement('div');
+      actions.className = 'card-actions';
+      const analyzeBtn = document.createElement('button');
+      analyzeBtn.className = 'btn btn-primary btn-sm';
+      const icon = document.createElement('i');
+      icon.className = 'fas fa-microscope';
+      analyzeBtn.appendChild(icon);
+      analyzeBtn.appendChild(document.createTextNode(' Analyze'));
+      analyzeBtn.addEventListener('click', function() { openAnalysis(position - 1); });
+      actions.appendChild(analyzeBtn);
+      body.appendChild(actions);
+    }
 
     card.appendChild(body);
     return card;

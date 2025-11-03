@@ -2,16 +2,19 @@
 set -eu
 
 PORT="${PORT:-5000}"
+WORKERS="${WORKERS:-1}"
+THREADS="${THREADS:-1}"
 
 # Ensure logs directory exists
 mkdir -p /app/logs
 
-echo "Starting server on port ${PORT}"
+echo "Starting server on port ${PORT} with ${WORKERS} workers and ${THREADS} threads"
 
-GUNICORN_ARGS="-w 1 -b 0.0.0.0:${PORT} \
+GUNICORN_ARGS="-w ${WORKERS} --threads ${THREADS} -b 0.0.0.0:${PORT} \
   --access-logfile /app/logs/gunicorn.access.log \
   --error-logfile /app/logs/gunicorn.error.log \
-  --log-level warning"
+  --log-level warning \
+  --timeout 60"
 
 if command -v pixi >/dev/null 2>&1; then
   echo "pixi detected, running inside pixi"

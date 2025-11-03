@@ -117,15 +117,25 @@ function updateInputSummary() {
         inputs.push({ type: 'Molecular Weight', count: 1, icon: 'fas fa-weight', value: mwInput.value + ' g/mol' });
     }
     
+    summaryContent.textContent = '';
     if (inputs.length === 0) {
-        summaryContent.innerHTML = '<p class="no-inputs">No spectral data entered yet</p>';
+        const p = document.createElement('p');
+        p.className = 'no-inputs';
+        p.textContent = 'No spectral data entered yet';
+        summaryContent.appendChild(p);
     } else {
-        summaryContent.innerHTML = inputs.map(input => 
-            `<div class="input-item">
-                <i class="${input.icon}"></i>
-                <span>${input.type}: ${input.count} ${input.count === 1 ? 'entry' : 'entries'}${input.value ? ` (${input.value})` : ''}</span>
-            </div>`
-        ).join('');
+        inputs.forEach(input => {
+            const item = document.createElement('div');
+            item.className = 'input-item';
+            const iconEl = document.createElement('i');
+            iconEl.className = input.icon;
+            const span = document.createElement('span');
+            const countText = `${input.count} ${input.count === 1 ? 'entry' : 'entries'}`;
+            span.textContent = `${input.type}: ${countText}${input.value ? ` (${input.value})` : ''}`;
+            item.appendChild(iconEl);
+            item.appendChild(span);
+            summaryContent.appendChild(item);
+        });
     }
 }
 
@@ -243,13 +253,16 @@ function createRow(cellConfigs) {
         } else if (config.type === 'button') {
             const button = document.createElement('button');
             button.className = 'btn-icon';
-            button.onclick = function() { eval(config.onclick); };
             if (config.title) button.title = config.title;
-            
             const icon = document.createElement('i');
             icon.className = config.icon;
             button.appendChild(icon);
-            
+            // Bind known handlers without eval
+            if (config.onclick === 'removeRow(this)') {
+                button.addEventListener('click', function() { removeRow(button); });
+            } else if (typeof config.onclick === 'function') {
+                button.addEventListener('click', () => config.onclick(button));
+            }
             cell.appendChild(button);
         }
         
@@ -422,13 +435,13 @@ function loadDataIntoTable(tableId, data, columnsPerRow) {
 
 // Toggle collapsible sections
 function toggleSection(sectionId) {
+    if (window.Toggles && typeof window.Toggles.toggleSection === 'function') {
+        return window.Toggles.toggleSection(sectionId);
+    }
     const content = document.getElementById(`${sectionId}-content`);
     const icon = document.getElementById(`${sectionId}-icon`);
-    
     if (content && icon) {
-        collapsibleState[sectionId] = !collapsibleState[sectionId];
-        
-        if (collapsibleState[sectionId]) {
+        if (content.classList.contains('collapsed')) {
             content.classList.remove('collapsed');
             icon.classList.remove('rotated');
         } else {
@@ -476,15 +489,14 @@ function swapHSQCColumns() {
 
 // Show message to user
 function showMessage(message, type = 'info') {
+    if (window.ErrorUI && typeof window.ErrorUI.showMessage === 'function') {
+        return window.ErrorUI.showMessage(message, type);
+    }
     const messageDiv = document.createElement('div');
     messageDiv.className = `${type}-message`;
     messageDiv.textContent = message;
-    
-    // Insert at the top of the container
     const container = document.querySelector('.container');
     container.insertBefore(messageDiv, container.firstChild);
-    
-    // Remove after 5 seconds
     setTimeout(() => {
         messageDiv.remove();
     }, 5000);
@@ -492,42 +504,13 @@ function showMessage(message, type = 'info') {
 
 // Show detailed error message with troubleshooting
 function showDetailedError(userMessage, error) {
+    if (window.ErrorUI && typeof window.ErrorUI.showDetailedError === 'function') {
+        return window.ErrorUI.showDetailedError(userMessage, error);
+    }
     const resultsGrid = document.getElementById('results-grid');
-    
     const errorDiv = document.createElement('div');
     errorDiv.className = 'error-details';
-    errorDiv.innerHTML = `
-        <div class="error-header">
-            <i class="fas fa-exclamation-triangle"></i>
-            <h3>Prediction Failed</h3>
-        </div>
-        <div class="error-message">
-            <p><strong>Error:</strong> ${userMessage}</p>
-        </div>
-        <div class="error-troubleshooting">
-            <h4>Troubleshooting Steps:</h4>
-            <ul>
-                <li>Check if the Docker container is running: <code>docker ps</code></li>
-                <li>Verify the data folder is mounted correctly</li>
-                <li>Check server logs: <code>docker-compose logs -f</code></li>
-                <li>Restart the container: <code>./restart.sh</code></li>
-                <li>Ensure all required files are in the data/ directory</li>
-            </ul>
-        </div>
-        <div class="error-actions">
-            <button class="btn btn-primary" onclick="retryPrediction()">
-                <i class="fas fa-redo"></i> Retry Prediction
-            </button>
-            <button class="btn btn-secondary" onclick="checkBackendHealth()">
-                <i class="fas fa-heartbeat"></i> Check Backend Health
-            </button>
-        </div>
-        <details class="error-technical">
-            <summary>Technical Details (Click to expand)</summary>
-            <pre>${error.stack || error.message}</pre>
-        </details>
-    `;
-    
+    errorDiv.textContent = userMessage || 'Unexpected error';
     resultsGrid.innerHTML = '';
     resultsGrid.appendChild(errorDiv);
 }
@@ -693,478 +676,62 @@ function validateInputData(data) {
 
 // Run prediction
 async function runPrediction() {
-    const data = collectInputData();
-    const errors = validateInputData(data);
-    
-    if (errors.length > 0) {
-        errors.forEach(error => showMessage(error, 'error'));
-        return;
-    }
-    
-    const k = parseInt(document.getElementById('top-k').value);
-    
-    // Show loading state
-    const resultsSection = document.getElementById('results-section');
-    const loading = document.getElementById('loading');
-    const resultsGrid = document.getElementById('results-grid');
-    
-    resultsSection.style.display = 'block';
-    loading.style.display = 'flex';
-    resultsGrid.innerHTML = '';
-    
-    try {
-        // First check if backend is available
-        const healthResponse = await fetch('/health', { 
-            method: 'GET',
-            timeout: 5000 
-        });
-        
-        if (!healthResponse.ok) {
-            throw new Error('Backend service is not available. Please check if the server is running.');
-        }
-        
-        const healthData = await healthResponse.json();
-        
-        // Check if model is ready
-        if (!healthData.model_loaded) {
-            if (healthData.error) {
-                throw new Error(`Model initialization failed: ${healthData.error}`);
-            } else {
-                throw new Error('Model is still initializing. Please wait a moment and try again.');
-            }
-        }
-        
-        const requestBody = {
-            raw: data,
-            k: k
-        };
-        
-        const response = await fetch('/predict', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        if (!response.ok) {
-            let errorMessage = 'Prediction request failed.';
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch (e) {
-                // If we can't parse the error response, use default message
-                if (response.status === 404) {
-                    errorMessage = 'Prediction endpoint not found. Please check server configuration.';
-                } else if (response.status === 500) {
-                    errorMessage = 'Internal server error. The model may not be loaded correctly.';
-                } else if (response.status === 503) {
-                    errorMessage = 'Service temporarily unavailable. Please try again in a moment.';
-                } else {
-                    errorMessage = `Server error (${response.status}). Please contact support.`;
-                }
-            }
-            throw new Error(errorMessage);
-        }
-        
-        const result = await response.json();
-        
-        
-        if (result.error) {
-            throw new Error(result.error);
-        }
-        
-        // Hide loading, show results
-        loading.style.display = 'none';
-        displayResults(result);
-        
-    } catch (error) {
-        loading.style.display = 'none';
-        
-        // Handle different types of errors with user-friendly messages
-        let userMessage = error.message;
-        
-        if (error.name === 'TypeError' && error.message.includes('fetch')) {
-            userMessage = 'Cannot connect to the prediction server. Please ensure the backend is running and accessible.';
-        } else if (error.message.includes('timeout')) {
-            userMessage = 'Request timed out. The server may be overloaded. Please try again.';
-        } else if (error.message.includes('NetworkError')) {
-            userMessage = 'Network error. Please check your internet connection and try again.';
-        }
-        
-        // Show detailed error message
-        showDetailedError(userMessage, error);
-        console.error('Prediction error:', error);
+    if (window.Prediction && typeof window.Prediction.run === 'function') {
+        return await window.Prediction.run();
     }
 }
 
 // Display prediction results
 async function displayResults(result) {
+    if (window.Results && typeof window.Results.displayResults === 'function') {
+        return await window.Results.displayResults(result);
+    }
+    // Fallback minimal rendering
     const resultsGrid = document.getElementById('results-grid');
-    
-    // Handle new optimized response format
-    if (result.results && Array.isArray(result.results)) {
-        const results = result.results;
-        
-        if (results.length === 0) {
-            resultsGrid.innerHTML = '<p class="error-message">No results returned from the model.</p>';
-            return;
-        }
-
-        // Store results globally for analysis page access
-        currentResults = results;
-        
-        // Clear and display all results immediately
-        resultsGrid.innerHTML = '';
-        const maxResults = Math.min(10, results.length);
-        
-        for (let i = 0; i < maxResults; i++) {
-            const resultData = results[i];
-            const card = createResultCard(i + 1, resultData);
-            resultsGrid.appendChild(card);
-        }
-        
-        return;
-    }
-    
-    // Fallback for old response format (backward compatibility)
-    const indices = result.topk_indices || result.topk || [];
-    const scores = result.topk_scores || [];
-    
-    if (!indices || indices.length === 0) {
-        resultsGrid.innerHTML = '<p class="error-message">No results returned from the model.</p>';
-        return;
-    }
-
-    // Create 10 blank result cards first
-    resultsGrid.innerHTML = '';
-    const maxResults = Math.min(10, indices.length);
-    
-    for (let i = 0; i < maxResults; i++) {
-        const card = createBlankResultCard(i + 1);
-        resultsGrid.appendChild(card);
-    }
-    
-    // Process results and fill them in gradually
-    for (let i = 0; i < maxResults; i++) {
-        const idx = indices[i];
-        const similarity = scores[i] || 0.0;
-        
-        try {
-            // Fetch metadata
-            const metaResponse = await fetch(`/meta/${idx}`);
-            if (!metaResponse.ok) {
-                updateResultCard(i, null, null, null, 'Failed to load metadata');
-                continue;
-            }
-            
-            const meta = await metaResponse.json();
-            const smiles = meta.smiles;
-            
-            if (!smiles) {
-                updateResultCard(i, null, null, null, 'No SMILES data available');
-                continue;
-            }
-            
-            // Update the card with real data
-            updateResultCard(i, idx, smiles, similarity, null);
-            
-            // Add a small delay to show gradual loading
-            await new Promise(resolve => setTimeout(resolve, 200));
-            
-        } catch (error) {
-            console.warn(`Failed to process result ${idx}:`, error);
-            updateResultCard(i, null, null, null, 'Error loading data');
-        }
-    }
+    resultsGrid.innerHTML = '<p class="error-message">Renderer unavailable.</p>';
 }
 
 // Create result card with complete data
 function createResultCard(position, resultData) {
+    if (window.ResultRenderer && typeof window.ResultRenderer.createCard === 'function') {
+        return window.ResultRenderer.createCard(position, resultData);
+    }
+    // Fallback: simple card
     const card = document.createElement('div');
     card.className = 'result-card';
-    
-    // Robust similarity handling
-    let similarity = 0.0;
-    if (resultData && typeof resultData.similarity === 'number' && !isNaN(resultData.similarity)) {
-        similarity = resultData.similarity;
-    }
-    
-    const smiles = (resultData && resultData.smiles) ? resultData.smiles : '';
-    const svg = (resultData && resultData.svg) ? resultData.svg : '';
-    const name = (resultData && resultData.name) ? resultData.name : '';
-    const primaryLink = (resultData && resultData.primary_link) ? resultData.primary_link : '';
-    const databaseLinks = (resultData && resultData.database_links) ? resultData.database_links : {};
-    const npPathway = (resultData && resultData.np_pathway) ? resultData.np_pathway : null;
-    const npSuperclass = (resultData && resultData.np_superclass) ? resultData.np_superclass : null;
-    const npClass = (resultData && resultData.np_class) ? resultData.np_class : null;
-    
-    // Ensure similarity is a valid number and convert to percentage
-    const similarityPercent = (similarity * 100).toFixed(1);
-    
-    // Handle both SVG and base64 image formats
-    let moleculeDisplay = '<div class="no-molecule">No structure available</div>';
-    if (svg) {
-        if (svg.startsWith('data:image/')) {
-            // Base64 image format (enhanced visualization)
-            moleculeDisplay = `<img src="${svg}" alt="Molecular structure" class="molecule-image" style="max-width: 100%; max-height: 200px; border-radius: 4px;">`;
-        } else if (svg.startsWith('<svg') || svg.startsWith('<')) {
-            // SVG format (basic visualization)
-            moleculeDisplay = svg;
-        }
-    }
-    
-    // Create database links section
-    let databaseLinksHtml = '';
-    if (Object.keys(databaseLinks).length > 0) {
-        const linkItems = [];
-        if (databaseLinks.coconut) {
-            linkItems.push(`<a href="${databaseLinks.coconut}" target="_blank" class="db-link coconut">COCONUT</a>`);
-        }
-        if (databaseLinks.lotus) {
-            linkItems.push(`<a href="${databaseLinks.lotus}" target="_blank" class="db-link lotus">LOTUS</a>`);
-        }
-        if (databaseLinks.npmrd) {
-            linkItems.push(`<a href="${databaseLinks.npmrd}" target="_blank" class="db-link npmrd">NP-MRD</a>`);
-        }
-        databaseLinksHtml = `<div class="database-links">${linkItems.join(' | ')}</div>`;
-    }
-    
-    // Create name section with primary link
-    let nameHtml = '';
-    if (name) {
-        if (primaryLink) {
-            nameHtml = `<div class="molecule-name"><a href="${primaryLink}" target="_blank" class="primary-link">${name}</a></div>`;
-        } else {
-            nameHtml = `<div class="molecule-name">${name}</div>`;
-        }
-    }
-    
-    // Create placeholder fields section
-    let placeholderFieldsHtml = '';
-    if (npPathway !== null || npSuperclass !== null || npClass !== null) {
-        const fields = [];
-        if (npPathway !== null) fields.push(`<div class="placeholder-field"><strong>NP Pathway:</strong> <span class="placeholder-value">${npPathway || 'N/A'}</span></div>`);
-        if (npSuperclass !== null) fields.push(`<div class="placeholder-field"><strong>NP Superclass:</strong> <span class="placeholder-value">${npSuperclass || 'N/A'}</span></div>`);
-        if (npClass !== null) fields.push(`<div class="placeholder-field"><strong>NP Class:</strong> <span class="placeholder-value">${npClass || 'N/A'}</span></div>`);
-        placeholderFieldsHtml = `<div class="placeholder-fields">${fields.join('')}</div>`;
-    }
-    
-    card.innerHTML = `
-        <div class="card-header">
-            <div class="card-title">Result #${position}</div>
-            <div class="similarity-score">${similarityPercent}%</div>
-        </div>
-        <div class="card-body">
-            <div id="molecule-${position}" class="molecule-container">
-                ${moleculeDisplay}
-            </div>
-            ${nameHtml}
-            ${databaseLinksHtml}
-            <div><strong>SMILES:</strong></div>
-            <div class="smiles-code">${smiles}</div>
-            <div><strong>Similarity:</strong> <span>${similarityPercent}%</span></div>
-            ${placeholderFieldsHtml}
-            <div class="card-actions">
-                <button class="btn btn-primary btn-sm" onclick="openAnalysis(${position - 1})">
-                    <i class="fas fa-microscope"></i> Analyze
-                </button>
-            </div>
-        </div>
-    `;
-    
+    card.textContent = `Result #${position}`;
     return card;
 }
 
-// Create blank result card element (for backward compatibility)
 function createBlankResultCard(position) {
+    if (window.Results && typeof window.Results.createBlankResultCard === 'function') {
+        return window.Results.createBlankResultCard(position);
+    }
     const card = document.createElement('div');
-    card.className = 'result-card loading';
-    
-    card.innerHTML = `
-        <div class="card-header">
-            <div class="card-title">Result #${position}</div>
-            <div class="similarity-score loading">Loading...</div>
-        </div>
-        <div class="card-body">
-            <div id="molecule-${position}" class="molecule-container loading">
-                <div class="loading-spinner"></div>
-            </div>
-            <div><strong>SMILES:</strong></div>
-            <div class="smiles-code loading">Loading...</div>
-            <div><strong>Similarity:</strong> <span class="loading">Loading...</span></div>
-        </div>
-    `;
-    
+    card.className = 'result-card';
+    card.textContent = `Result #${position}`;
     return card;
 }
 
-// Update result card with actual data
 function updateResultCard(position, idx, smiles, tanimoto, errorMessage) {
-    const card = document.querySelector(`#results-grid .result-card:nth-child(${position + 1})`);
-    if (!card) return;
-    
-    if (errorMessage) {
-        // Show error state
-        card.innerHTML = `
-            <div class="card-header">
-                <div class="card-title">Result #${position + 1}</div>
-                <div class="similarity-score error">Error</div>
-            </div>
-            <div class="card-body">
-                <div class="molecule-container error">
-                    <i class="fas fa-exclamation-triangle"></i>
-                </div>
-                <div><strong>Error:</strong></div>
-                <div class="error-message">${errorMessage}</div>
-            </div>
-        `;
-        card.className = 'result-card error';
-        return;
+    if (window.Results && typeof window.Results.updateResultCard === 'function') {
+        return window.Results.updateResultCard(position, idx, smiles, tanimoto, errorMessage);
     }
-    
-    // Update with real data
-    card.className = 'result-card';
-    card.innerHTML = `
-        <div class="card-header">
-            <div class="card-title">Result #${position + 1}</div>
-            <div class="similarity-score">${(tanimoto * 100).toFixed(1)}%</div>
-        </div>
-        <div class="card-body">
-            <div id="molecule-${position + 1}" class="molecule-container">
-                <div class="no-molecule">Loading enhanced visualization...</div>
-            </div>
-            <div><strong>SMILES:</strong></div>
-            <div class="smiles-code">${smiles}</div>
-            <div><strong>Similarity:</strong> ${tanimoto.toFixed(3)}</div>
-        </div>
-    `;
-    
 }
 
 
 // Update backend status indicator
 async function updateBackendStatus() {
-    const statusElement = document.getElementById('backend-status');
-    if (!statusElement) return; // Exit early if element doesn't exist
-    
-    const indicator = statusElement.querySelector('.status-indicator');
-    const statusText = statusElement.querySelector('.status-text');
-    
-    if (!indicator || !statusText) return; // Exit early if sub-elements don't exist
-    
-    // Show loading state immediately
-    indicator.className = 'fas fa-circle status-indicator loading';
-    statusText.textContent = 'Checking backend status...';
-    
-    try {
-        // Add timeout to prevent hanging on slow backend responses
-        const controller = new AbortController();
-        const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
-        
-        const response = await fetch('/health', {
-            method: 'GET',
-            headers: {
-                'Accept': 'application/json',
-                'Cache-Control': 'no-cache'
-            },
-            signal: controller.signal
-        });
-        
-        clearTimeout(timeoutId);
-        const data = await response.json();
-        
-        if (response.ok && data.model_loaded) {
-            indicator.className = 'fas fa-circle status-indicator ready';
-            statusText.textContent = `Backend ready - Model loaded (uptime: ${data.uptime_seconds || 'unknown'}s)`;
-        } else if (data.status === 'loading') {
-            indicator.className = 'fas fa-circle status-indicator loading';
-            statusText.textContent = `Model loading in background... (uptime: ${data.uptime_seconds || 'unknown'}s)`;
-        } else if (data.status === 'initializing') {
-            indicator.className = 'fas fa-circle status-indicator initializing';
-            statusText.textContent = `Model initializing... (uptime: ${data.uptime_seconds || 'unknown'}s)`;
-        } else if (data.error) {
-            indicator.className = 'fas fa-circle status-indicator error';
-            statusText.textContent = 'Model initialization failed';
-        } else {
-            indicator.className = 'fas fa-circle status-indicator error';
-            statusText.textContent = 'Backend unavailable';
-        }
-    } catch (error) {
-        console.warn('Backend status check failed:', error);
-        indicator.className = 'fas fa-circle status-indicator error';
-        
-        if (error.name === 'AbortError') {
-            statusText.textContent = 'Backend connection timeout - still starting up';
-        } else {
-            statusText.textContent = 'Cannot connect to backend';
-        }
+    if (window.Health && typeof window.Health.updateBackendStatus === 'function') {
+        return await window.Health.updateBackendStatus();
     }
 }
 
 
 // SMILES search function
 async function runSmilesSearch() {
-    const smilesInput = document.getElementById('smiles-input');
-    const smiles = smilesInput.value.trim();
-    
-    if (!smiles) {
-        showMessage('Please enter a SMILES string', 'error');
-        return;
-    }
-    
-    const k = parseInt(document.getElementById('top-k').value);
-    
-    // Show loading state
-    const resultsSection = document.getElementById('results-section');
-    const loading = document.getElementById('loading');
-    const resultsGrid = document.getElementById('results-grid');
-    
-    resultsSection.style.display = 'block';
-    loading.style.display = 'flex';
-    resultsGrid.innerHTML = '';
-    
-    try {
-        const response = await fetch('/smiles-search', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify({
-                smiles: smiles,
-                k: k
-            })
-        });
-        
-        if (!response.ok) {
-            let errorMessage = 'SMILES search failed.';
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch (e) {
-                errorMessage = `Server error (${response.status}). Please try again.`;
-            }
-            throw new Error(errorMessage);
-        }
-        
-        const result = await response.json();
-        
-        
-        if (result.error) {
-            throw new Error(result.error);
-        }
-        
-        // Hide loading, show results
-        loading.style.display = 'none';
-        displayResults(result);
-        
-    } catch (error) {
-        loading.style.display = 'none';
-        showMessage(error.message, 'error');
+    if (window.SmilesSearch && typeof window.SmilesSearch.runSmilesSearch === 'function') {
+        return await window.SmilesSearch.runSmilesSearch();
     }
 }
 
@@ -1172,19 +739,23 @@ async function runSmilesSearch() {
 let currentAnalysisResult = null;
 let originalAnalysisData = null;
 let currentResults = [];
+let currentPredictedFp = null;
+let currentRetrievedFp = null;
 
 // Page navigation functions
 function openAnalysis(resultIndex) {
     console.log('openAnalysis called with index:', resultIndex);
-    console.log('currentResults:', currentResults);
+    let resultsSource = (window.State && State.get) ? State.get('currentResults', currentResults) : currentResults;
+    console.log('currentResults:', resultsSource);
     
-    if (!currentResults || !currentResults[resultIndex]) {
+    if (!resultsSource || !resultsSource[resultIndex]) {
         console.error('No result data available for analysis');
         showMessage('No result data available for analysis', 'error');
         return;
     }
     
-    currentAnalysisResult = currentResults[resultIndex];
+    currentAnalysisResult = resultsSource[resultIndex];
+    if (window.State && State.set) State.set('currentAnalysisResult', currentAnalysisResult);
     originalAnalysisData = collectInputData();
     
     console.log('currentAnalysisResult:', currentAnalysisResult);
@@ -1276,32 +847,63 @@ function populateSelectedMolecule(result) {
     let nameHtml = '';
     if (result.name) {
         if (result.primary_link) {
-            nameHtml = `<a href="${result.primary_link}" target="_blank" class="primary-link">${result.name}</a>`;
+            nameHtml = { link: result.primary_link, text: result.name };
         } else {
-            nameHtml = result.name;
+            nameHtml = { text: result.name };
         }
     }
     
-    let databaseLinksHtml = '';
-    if (result.database_links && Object.keys(result.database_links).length > 0) {
-        const linkItems = [];
+    // Clear and rebuild info
+    info.textContent = '';
+    const nameDiv = document.createElement('div');
+    nameDiv.className = 'molecule-name-display';
+    if (nameHtml) {
+        if (nameHtml.link) {
+            const a = document.createElement('a');
+            a.href = nameHtml.link;
+            a.target = '_blank';
+            a.className = 'primary-link';
+            a.textContent = nameHtml.text;
+            nameDiv.appendChild(a);
+        } else {
+            nameDiv.textContent = nameHtml.text;
+        }
+    }
+    
+    info.appendChild(nameDiv);
+    const smilesDiv = document.createElement('div');
+    smilesDiv.className = 'molecule-smiles-display';
+    smilesDiv.textContent = result.smiles || '';
+    info.appendChild(smilesDiv);
+    const linksDiv = document.createElement('div');
+    linksDiv.className = 'molecule-database-links';
+    if (result.database_links) {
         if (result.database_links.coconut) {
-            linkItems.push(`<a href="${result.database_links.coconut}" target="_blank" class="db-link coconut">COCONUT</a>`);
+            const a = document.createElement('a');
+            a.href = result.database_links.coconut;
+            a.target = '_blank';
+            a.className = 'db-link coconut';
+            a.textContent = 'COCONUT';
+            linksDiv.appendChild(a);
         }
         if (result.database_links.lotus) {
-            linkItems.push(`<a href="${result.database_links.lotus}" target="_blank" class="db-link lotus">LOTUS</a>`);
+            const a = document.createElement('a');
+            a.href = result.database_links.lotus;
+            a.target = '_blank';
+            a.className = 'db-link lotus';
+            a.textContent = 'LOTUS';
+            linksDiv.appendChild(a);
         }
         if (result.database_links.npmrd) {
-            linkItems.push(`<a href="${result.database_links.npmrd}" target="_blank" class="db-link npmrd">NP-MRD</a>`);
+            const a = document.createElement('a');
+            a.href = result.database_links.npmrd;
+            a.target = '_blank';
+            a.className = 'db-link npmrd';
+            a.textContent = 'NP-MRD';
+            linksDiv.appendChild(a);
         }
-        databaseLinksHtml = linkItems.join(' | ');
     }
-    
-    info.innerHTML = `
-        <div class="molecule-name-display">${nameHtml}</div>
-        <div class="molecule-smiles-display">${result.smiles}</div>
-        <div class="molecule-database-links">${databaseLinksHtml}</div>
-    `;
+    info.appendChild(linksDiv);
 }
 
 function copyDataToAnalysisPage(data) {
@@ -1395,13 +997,15 @@ function createRowAnalysis(cellConfigs) {
         } else if (config.type === 'button') {
             const button = document.createElement('button');
             button.className = 'btn-icon';
-            button.onclick = function() { eval(config.onclick); };
             if (config.title) button.title = config.title;
-            
             const icon = document.createElement('i');
             icon.className = config.icon;
             button.appendChild(icon);
-            
+            if (config.onclick === 'removeRowAnalysis(this)') {
+                button.addEventListener('click', function() { removeRowAnalysis(button); });
+            } else if (typeof config.onclick === 'function') {
+                button.addEventListener('click', () => config.onclick(button));
+            }
             cell.appendChild(button);
         }
         
@@ -1484,13 +1088,13 @@ function swapHSQCColumnsAnalysis() {
 }
 
 function toggleSectionAnalysis(sectionId) {
+    if (window.Toggles && typeof window.Toggles.toggleSectionAnalysis === 'function') {
+        return window.Toggles.toggleSectionAnalysis(sectionId);
+    }
     const content = document.getElementById(`analysis-${sectionId}-content`);
     const icon = document.getElementById(`analysis-${sectionId}-icon`);
-    
     if (content && icon) {
-        const isCollapsed = content.classList.contains('collapsed');
-        
-        if (isCollapsed) {
+        if (content.classList.contains('collapsed')) {
             content.classList.remove('collapsed');
             icon.classList.remove('rotated');
         } else {
@@ -1532,28 +1136,7 @@ async function runAnalysis() {
             target_index: currentAnalysisResult.index
         };
         
-        const response = await fetch('/analyze', {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-            },
-            body: JSON.stringify(requestBody)
-        });
-        
-        if (!response.ok) {
-            let errorMessage = 'Analysis request failed.';
-            try {
-                const errorData = await response.json();
-                if (errorData.error) {
-                    errorMessage = errorData.error;
-                }
-            } catch (e) {
-                errorMessage = `Server error (${response.status}). Please try again.`;
-            }
-            throw new Error(errorMessage);
-        }
-        
-        const result = await response.json();
+        const result = await ApiClient.postAnalyze(requestBody);
         
         if (result.error) {
             throw new Error(result.error);
@@ -1591,30 +1174,136 @@ function showAnalysisVisualizations() {
 }
 
 async function processAnalysisResults(result) {
-    // Update similarity visualization
-    await updateSimilarityVisualization(result.similarity_visualization);
-    
-    // Update change visualization
-    await updateChangeVisualization(result.change_visualization);
-    
-    // Update fingerprint differences
-    console.log('Processing fingerprint differences:', result.fingerprint_differences);
-    if (result.fingerprint_differences) {
-        updateFingerprintDifferences(result.fingerprint_differences);
-    } else {
-        console.log('No fingerprint differences found in result');
+    // Delegate core processing to feature module
+    if (window.Analysis && typeof window.Analysis.processAnalysisResults === 'function') {
+        await window.Analysis.processAnalysisResults(result);
     }
+    
+    // Display backend-provided secondary retrieval or skip with note
+    const secondarySection = document.getElementById('secondary-retrieval-section');
+    const secondaryGrid = document.getElementById('secondary-results-grid');
+    const secondaryNote = document.getElementById('secondary-note');
+    
+    if (result.secondary_skipped) {
+        if (secondarySection) secondarySection.style.display = 'none';
+        if (secondaryNote) {
+            secondaryNote.style.display = 'block';
+            secondaryNote.textContent = result.secondary_message || 'Predicted and selected fingerprints are identical.';
+        }
+    } else if (result.secondary_results && Array.isArray(result.secondary_results)) {
+        if (secondaryNote) secondaryNote.style.display = 'none';
+        if (secondarySection) secondarySection.style.display = 'block';
+        if (secondaryGrid) {
+            secondaryGrid.innerHTML = '';
+            if (result.secondary_results.length === 0) {
+                secondaryGrid.innerHTML = '<p class="no-results-message">No results found for remaining substructure.</p>';
+            } else {
+                const secondaryResults = result.secondary_results;
+                for (let i = 0; i < secondaryResults.length; i++) {
+                    const resultData = secondaryResults[i];
+                    const card = createResultCard(i + 1, resultData);
+                    secondaryGrid.appendChild(card);
+                }
+            }
+        }
+    } else {
+        // Fallback: hide section if nothing provided
+        if (secondarySection) secondarySection.style.display = 'none';
+    }
+}
+
+function updateFingerprintIndices(predictedIndices, retrievedIndices) {
+    console.log('updateFingerprintIndices called');
+    console.log('Predicted indices:', predictedIndices);
+    console.log('Retrieved indices:', retrievedIndices);
+    
+    const indicesSection = document.getElementById('fingerprint-indices-section');
+    if (indicesSection) {
+        indicesSection.style.display = 'block';
+    }
+    
+    const buildIndicesList = (container, indices, typeKey) => {
+        if (!container) return;
+        container.textContent = '';
+        if (indices && Array.isArray(indices) && indices.length > 0) {
+            const sorted = [...indices].sort((a, b) => a - b);
+            const count = sorted.length;
+            const previewCount = Math.min(50, count);
+            const preview = sorted.slice(0, previewCount);
+            const hasMore = count > previewCount;
+            
+            const summary = document.createElement('div');
+            summary.className = 'indices-summary';
+            summary.textContent = `Total: ${count} bits`;
+            container.appendChild(summary);
+            
+            const valuesDiv = document.createElement('div');
+            valuesDiv.className = 'indices-values';
+            preview.forEach((idx) => {
+                const badge = document.createElement('span');
+                badge.className = 'index-badge';
+                badge.textContent = String(idx);
+                valuesDiv.appendChild(badge);
+            });
+            if (hasMore) {
+                const more = document.createElement('span');
+                more.className = 'index-more';
+                more.textContent = `... and ${count - previewCount} more`;
+                valuesDiv.appendChild(more);
+            }
+            container.appendChild(valuesDiv);
+            
+            if (hasMore) {
+                const fullDiv = document.createElement('div');
+                fullDiv.className = 'indices-full';
+                fullDiv.style.display = 'none';
+                sorted.forEach((idx) => {
+                    const badge = document.createElement('span');
+                    badge.className = 'index-badge';
+                    badge.textContent = String(idx);
+                    fullDiv.appendChild(badge);
+                });
+                container.appendChild(fullDiv);
+                
+                const button = document.createElement('button');
+                button.className = 'btn btn-sm btn-secondary';
+                button.textContent = 'Show All';
+                button.addEventListener('click', () => {
+                    if (fullDiv.style.display === 'none') {
+                        fullDiv.style.display = 'block';
+                        valuesDiv.style.display = 'none';
+                        button.textContent = 'Show Less';
+                    } else {
+                        fullDiv.style.display = 'none';
+                        valuesDiv.style.display = 'block';
+                        button.textContent = 'Show All';
+                    }
+                });
+                container.appendChild(button);
+            }
+        } else {
+            const empty = document.createElement('div');
+            empty.className = 'no-indices';
+            empty.textContent = 'No indices available';
+            container.appendChild(empty);
+        }
+    };
+    
+    buildIndicesList(document.getElementById('predicted-fp-indices'), predictedIndices, 'predicted');
+    buildIndicesList(document.getElementById('retrieved-fp-indices'), retrievedIndices, 'retrieved');
 }
 
 async function updateSimilarityVisualization(imageData) {
     const container = document.getElementById('similarity-visualization');
     
+    container.textContent = '';
     if (imageData) {
-        const moleculeDisplay = `<img src="${imageData}" alt="Similarity highlighting" class="molecule-image">`;
-        container.innerHTML = moleculeDisplay;
+        const img = document.createElement('img');
+        img.src = imageData;
+        img.alt = 'Similarity highlighting';
+        img.className = 'molecule-image';
+        container.appendChild(img);
         
-        // Initialize zoom/pan for the image
-        const img = container.querySelector('.molecule-image');
         if (img && typeof panzoom !== 'undefined') {
             panzoom(img, {
                 maxZoom: 5,
@@ -1623,19 +1312,24 @@ async function updateSimilarityVisualization(imageData) {
             });
         }
     } else {
-        container.innerHTML = '<div class="no-molecule">Failed to generate similarity visualization</div>';
+        const noMol = document.createElement('div');
+        noMol.className = 'no-molecule';
+        noMol.textContent = 'Failed to generate similarity visualization';
+        container.appendChild(noMol);
     }
 }
 
 async function updateChangeVisualization(imageData) {
     const container = document.getElementById('change-visualization');
     
+    container.textContent = '';
     if (imageData) {
-        const moleculeDisplay = `<img src="${imageData}" alt="Change highlighting" class="molecule-image">`;
-        container.innerHTML = moleculeDisplay;
+        const img = document.createElement('img');
+        img.src = imageData;
+        img.alt = 'Change highlighting';
+        img.className = 'molecule-image';
+        container.appendChild(img);
         
-        // Initialize zoom/pan for the image
-        const img = container.querySelector('.molecule-image');
         if (img && typeof panzoom !== 'undefined') {
             panzoom(img, {
                 maxZoom: 5,
@@ -1644,14 +1338,16 @@ async function updateChangeVisualization(imageData) {
             });
         }
     } else {
-        container.innerHTML = '<div class="no-molecule">Failed to generate change visualization</div>';
+        const noMol = document.createElement('div');
+        noMol.className = 'no-molecule';
+        noMol.textContent = 'Failed to generate change visualization';
+        container.appendChild(noMol);
     }
 }
 
 function updateFingerprintDifferences(differences) {
     console.log('updateFingerprintDifferences called with:', differences);
     
-    // Show the fingerprint differences section
     const fingerprintSection = document.querySelector('.fingerprint-differences-section');
     console.log('Fingerprint section found:', fingerprintSection);
     if (fingerprintSection) {
@@ -1659,42 +1355,172 @@ function updateFingerprintDifferences(differences) {
         console.log('Fingerprint section made visible');
     }
     
-    // Update added bits list
     const addedContainer = document.getElementById('added-bits-list');
+    const removedContainer = document.getElementById('removed-bits-list');
+    
+    // Added bits
+    addedContainer.textContent = '';
     if (differences.added && differences.added.length > 0) {
-        addedContainer.innerHTML = differences.added.map(bit => `
-            <div class="bit-item">
-                <div class="bit-header">Bit ${bit.bit_id}</div>
-                <div class="bit-details">
-                    Atom: ${bit.atom_symbol} | Radius: ${bit.radius}
-                </div>
-                <div class="fragment-structure">
-                    ${bit.substructure_image ? `<img src="${bit.substructure_image}" alt="Substructure" class="substructure-image">` : ''}
-                    <span class="smiles-text">${bit.fragment_smiles}</span>
-                </div>
-            </div>
-        `).join('');
+        differences.added.forEach(bit => {
+            const item = document.createElement('div');
+            item.className = 'bit-item';
+            const header = document.createElement('div');
+            header.className = 'bit-header';
+            header.textContent = `Bit ${bit.bit_id}`;
+            const details = document.createElement('div');
+            details.className = 'bit-details';
+            details.textContent = `Atom: ${bit.atom_symbol} | Radius: ${bit.radius}`;
+            const frag = document.createElement('div');
+            frag.className = 'fragment-structure';
+            if (bit.substructure_image) {
+                const img = document.createElement('img');
+                img.src = bit.substructure_image;
+                img.alt = 'Substructure';
+                img.className = 'substructure-image';
+                frag.appendChild(img);
+            }
+            const smiles = document.createElement('span');
+            smiles.className = 'smiles-text';
+            smiles.textContent = bit.fragment_smiles || '';
+            frag.appendChild(smiles);
+            item.appendChild(header);
+            item.appendChild(details);
+            item.appendChild(frag);
+            addedContainer.appendChild(item);
+        });
     } else {
-        addedContainer.innerHTML = '<div class="no-differences">No added bits detected</div>';
+        const empty = document.createElement('div');
+        empty.className = 'no-differences';
+        empty.textContent = 'No added bits detected';
+        addedContainer.appendChild(empty);
     }
     
-    // Update removed bits list
-    const removedContainer = document.getElementById('removed-bits-list');
+    // Removed bits
+    removedContainer.textContent = '';
     if (differences.removed && differences.removed.length > 0) {
-        removedContainer.innerHTML = differences.removed.map(bit => `
-            <div class="bit-item">
-                <div class="bit-header">Bit ${bit.bit_id}</div>
-                <div class="bit-details">
-                    Atom: ${bit.atom_symbol} | Radius: ${bit.radius}
-                </div>
-                <div class="fragment-structure">
-                    ${bit.substructure_image ? `<img src="${bit.substructure_image}" alt="Substructure" class="substructure-image">` : ''}
-                    <span class="smiles-text">${bit.fragment_smiles}</span>
-                </div>
-            </div>
-        `).join('');
+        differences.removed.forEach(bit => {
+            const item = document.createElement('div');
+            item.className = 'bit-item';
+            const header = document.createElement('div');
+            header.className = 'bit-header';
+            header.textContent = `Bit ${bit.bit_id}`;
+            const details = document.createElement('div');
+            details.className = 'bit-details';
+            details.textContent = `Atom: ${bit.atom_symbol} | Radius: ${bit.radius}`;
+            const frag = document.createElement('div');
+            frag.className = 'fragment-structure';
+            if (bit.substructure_image) {
+                const img = document.createElement('img');
+                img.src = bit.substructure_image;
+                img.alt = 'Substructure';
+                img.className = 'substructure-image';
+                frag.appendChild(img);
+            }
+            const smiles = document.createElement('span');
+            smiles.className = 'smiles-text';
+            smiles.textContent = bit.fragment_smiles || '';
+            frag.appendChild(smiles);
+            item.appendChild(header);
+            item.appendChild(details);
+            item.appendChild(frag);
+            removedContainer.appendChild(item);
+        });
     } else {
-        removedContainer.innerHTML = '<div class="no-differences">No removed bits detected</div>';
+        const empty = document.createElement('div');
+        empty.className = 'no-differences';
+        empty.textContent = 'No removed bits detected';
+        removedContainer.appendChild(empty);
+    }
+}
+
+// Secondary retrieval function
+async function runSecondaryRetrieval(predictedFp, retrievedFp, k = 10) {
+    if (!predictedFp || !retrievedFp) {
+        console.warn('Cannot run secondary retrieval: fingerprints not available');
+        return;
+    }
+    
+    console.log('Running secondary retrieval with k=', k);
+    
+    // Show loading state
+    const secondarySection = document.getElementById('secondary-retrieval-section');
+    if (secondarySection) {
+        secondarySection.style.display = 'block';
+    }
+    
+    const secondaryLoading = document.getElementById('secondary-retrieval-loading');
+    const secondaryGrid = document.getElementById('secondary-results-grid');
+    
+    if (secondaryLoading) secondaryLoading.style.display = 'flex';
+    if (secondaryGrid) secondaryGrid.innerHTML = '';
+    
+    try {
+        const response = await fetch('/secondary-retrieval', {
+            method: 'POST',
+            headers: {
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+                predicted_fp: predictedFp,
+                retrieved_fp: retrievedFp,
+                k: k
+            })
+        });
+        
+        if (!response.ok) {
+            let errorMessage = 'Secondary retrieval failed.';
+            try {
+                const errorData = await response.json();
+                if (errorData.error) {
+                    errorMessage = errorData.error;
+                }
+            } catch (e) {
+                errorMessage = `Server error (${response.status}). Please try again.`;
+            }
+            throw new Error(errorMessage);
+        }
+        
+        const result = await response.json();
+        
+        if (result.error) {
+            throw new Error(result.error);
+        }
+        
+        // Hide loading, show results
+        if (secondaryLoading) secondaryLoading.style.display = 'none';
+        
+        // Display results using the same display format as main page
+        if (result.results && Array.isArray(result.results)) {
+            if (secondaryGrid) {
+                secondaryGrid.innerHTML = '';
+                if (result.results.length === 0) {
+                    secondaryGrid.innerHTML = '<p class="no-results-message">No results found for remaining substructure.</p>';
+                } else {
+                    // Store results for potential analysis (same format as main page)
+                    const secondaryResults = result.results;
+                    for (let i = 0; i < secondaryResults.length; i++) {
+                        const resultData = secondaryResults[i];
+                        const card = createResultCard(i + 1, resultData);
+                        secondaryGrid.appendChild(card);
+                    }
+                }
+            }
+        } else {
+            if (secondaryGrid) {
+                secondaryGrid.innerHTML = '<p class="error-message">No results returned from secondary retrieval.</p>';
+            }
+        }
+        
+    } catch (error) {
+        console.error('Secondary retrieval error:', error);
+        if (secondaryLoading) secondaryLoading.style.display = 'none';
+        if (secondaryGrid) {
+            const p = document.createElement('p');
+            p.className = 'error-message';
+            p.textContent = `Secondary retrieval failed: ${error.message}`;
+            secondaryGrid.textContent = '';
+            secondaryGrid.appendChild(p);
+        }
     }
 }
 
@@ -1971,7 +1797,7 @@ function switchMainTab(tabName) {
 document.addEventListener('DOMContentLoaded', function() {
     // Check backend status after a short delay to allow page to render first
     setTimeout(() => {
-        updateBackendStatus();
+        if (window.Health && Health.updateBackendStatus) Health.updateBackendStatus();
     }, 100);
     
     // Update input summary on any input change, paste, or table modification
@@ -2021,19 +1847,15 @@ document.addEventListener('DOMContentLoaded', function() {
     updateInputSummary();
     
     // Check status every 10 seconds if not ready (reduced frequency to prevent multiple model setups)
-    const statusCheckInterval = setInterval(async () => {
-        try {
-            const response = await fetch('/health');
-            const data = await response.json();
-            
-            if (response.ok && data.model_loaded) {
-                clearInterval(statusCheckInterval);
-                updateBackendStatus();
-            } else {
-                updateBackendStatus();
+    if (window.Health && typeof window.Health.startPolling === 'function') {
+        window.Health.startPolling(10000);
+    } else {
+        const statusCheckInterval = setInterval(async () => {
+            try {
+                if (window.Health && Health.updateBackendStatus) await Health.updateBackendStatus();
+            } catch (e) {
+                if (window.Health && Health.updateBackendStatus) Health.updateBackendStatus();
             }
-        } catch (error) {
-            updateBackendStatus();
-        }
-    }, 10000);
+        }, 10000);
+    }
 });

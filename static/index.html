@@ -716,6 +716,25 @@
                     </div>
                 </div>
 
+                <!-- Fingerprint Indices Section -->
+                <div id="fingerprint-indices-section" class="fingerprint-indices-section" style="display: none;">
+                    <h2><i class="fas fa-list"></i> Fingerprint Bit Indices</h2>
+                    <div class="indices-grid">
+                        <div class="indices-category">
+                            <h3><i class="fas fa-flask" style="color: #3b82f6;"></i> Predicted Fingerprint Indices</h3>
+                            <div id="predicted-fp-indices" class="indices-list">
+                                <div class="no-indices">No indices available</div>
+                            </div>
+                        </div>
+                        <div class="indices-category">
+                            <h3><i class="fas fa-atom" style="color: #8b5cf6;"></i> Selected Molecule Fingerprint Indices</h3>
+                            <div id="retrieved-fp-indices" class="indices-list">
+                                <div class="no-indices">No indices available</div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
                 <!-- Fingerprint Differences Section -->
                 <div class="fingerprint-differences-section" style="display: none;">
                     <h2><i class="fas fa-dna"></i> Fingerprint Differences</h2>
@@ -734,11 +753,37 @@
                         </div>
                     </div>
                 </div>
+
+                <!-- Secondary Retrieval Note -->
+                <div id="secondary-note" class="warning-message" style="display: none;"></div>
+
+                <!-- Secondary Retrieval Section -->
+                <div id="secondary-retrieval-section" class="secondary-retrieval-section" style="display: none;">
+                    <h2><i class="fas fa-search"></i> Secondary Retrieval: Remaining Substructure Search</h2>
+                    <p class="section-description">Molecules similar to the predicted fingerprint minus the overlap with the selected molecule</p>
+                    <div id="secondary-retrieval-loading" class="loading" style="display: none;">
+                        <div class="spinner"></div>
+                        <p>Searching for remaining substructures...</p>
+                    </div>
+                    <div id="secondary-results-grid" class="results-grid"></div>
+                </div>
             </div>
         </div>
         <script src="https://cdn.jsdelivr.net/npm/panzoom@9.4.3/dist/panzoom.min.js"></script>
         <script src="/static/js/spreadsheet.js"></script>
         <script src="/static/js/visualization.js"></script>
+        <script src="/static/js/api/client.js"></script>
+        <script src="/static/js/ui/result-renderer.js"></script>
+        <script src="/static/js/ui/form-collector.js"></script>
+        <script src="/static/js/state/store.js"></script>
+        <script src="/static/js/features/analysis.js"></script>
+        <script src="/static/js/features/prediction.js"></script>
+        <script src="/static/js/features/results.js"></script>
+        <script src="/static/js/features/smiles.js"></script>
+        <script src="/static/js/features/health.js"></script>
+        <script src="/static/js/ui/error-ui.js"></script>
+        <script src="/static/js/ui/toggles.js"></script>
+        <script src="/static/js/ui/lazy.js"></script>
         <script src="/static/js/app.js"></script>
     </div>
 </body>

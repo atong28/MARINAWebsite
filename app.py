@@ -11,12 +11,30 @@ import base64
 import io
 
 from flask import Flask, jsonify, request, send_from_directory
+try:
+    from flask_compress import Compress
+    _compress_available = True
+except Exception:
+    _compress_available = False
+try:
+    from flask_limiter import Limiter
+    from flask_limiter.util import get_remote_address
+    _rate_limit_available = True
+except Exception:
+    _rate_limit_available = False
 from flask_cors import CORS
 
 from src.fp_loader import EntropyFPLoader
 from src import predictor
 from src.ranker import RankingSet
 from src.draw import draw_molecule, draw_fingerprint_changes, draw_similarity_comparison, get_fingerprint_differences
+from src.services.metadata_service import MetadataService
+from src.services.molecule_renderer import MoleculeRenderer
+from src.services.result_builder import build_result_card
+from src.services.model_service import ModelService
+from src.config import MOLECULE_IMG_SIZE, METADATA_PATH, DEFAULT_TOP_K, MAX_TOP_K
+from src.validators import validate_k, validate_smiles
+from src.spec import get_openapi_spec
 
 # Try to import RDKit, but don't fail if not available
 try:
@@ -28,6 +46,29 @@ except ImportError:
 
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
+
+# Register JSON error handlers
+try:
+    from src.http import register_error_handlers
+    register_error_handlers(app)
+except Exception:
+    pass
+
+# Enable compression if available
+if _compress_available:
+    try:
+        Compress(app)
+    except Exception:
+        pass
+
+# Enable simple rate limiting if available
+if _rate_limit_available:
+    try:
+        limiter = Limiter(get_remote_address, app=app, default_limits=["100 per minute"])  # coarse default
+    except Exception:
+        limiter = None
+else:
+    limiter = None
 
 # Add security headers to enable clipboard access
 @app.after_request
@@ -140,6 +181,12 @@ if not _model_initialized and not _model_loading:
 else:
     logger.info(f"Model initialization skipped - initialized: {_model_initialized}, loading: {_model_loading}")
 
+# Preload metadata cache on startup (non-blocking)
+try:
+    threading.Thread(target=lambda: MetadataService.instance().preload(), daemon=True).start()
+except Exception:
+    pass
+
 
 def pil_image_to_base64(image, format='PNG'):
     """Convert PIL Image to base64 string for web display."""
@@ -206,6 +253,14 @@ def health():
 def index():
   # Serve the simple frontend
   return send_from_directory('static', 'index.html')
+@app.route('/openapi.json', methods=['GET'])
+def openapi_json():
+    base = request.host_url.rstrip('/')
+    return jsonify(get_openapi_spec(base))
+
+@app.route('/docs', methods=['GET'])
+def docs():
+    return send_from_directory('static', 'docs.html')
 
 
 
@@ -214,8 +269,16 @@ def index():
 
 ## Removed /similarity endpoint for MVP (frontend uses top-k scores already)
 
-# Minimal prediction endpoint (CPU backend)
+# Apply route error decorator if available
+try:
+    _route_errors = app.route_errors
+except Exception:
+    _route_errors = lambda f: f
+
+
 @app.route('/predict', methods=['POST'])
+@_route_errors
+@(limiter.limit("30 per minute") if limiter else (lambda f: f))
 def predict():
     
     # Check if model is ready
@@ -229,16 +292,20 @@ def predict():
             return jsonify({'error': 'Model initialization not started. Please try again in a moment.'}), 503
     
     try:
-        payload = request.get_json(force=True)
+        payload = request.get_json()
     except Exception as e:
         return jsonify({'error': 'expected JSON body'}), 400
 
     if payload is None:
         return jsonify({'error': 'expected JSON body'}), 400
 
-    k = int(payload.get('k', 5))
+    k, k_err = validate_k(payload.get('k', DEFAULT_TOP_K))
+    if k_err:
+        return jsonify({'error': k_err}), 400
     if k <= 0:
         return jsonify({'error': 'k must be positive integer'}), 400
+    if k > MAX_TOP_K:
+        k = MAX_TOP_K
 
     try:
         # Model is already loaded from startup
@@ -258,145 +325,57 @@ def predict():
                 pred_fp = out[2] if len(out) > 2 else None
                 logger.info(f"Prediction completed: {len(scores)} scores and {len(indices)} indices")
                 
-                # Load metadata to get SMILES for all results
-                meta_path = os.path.join('data', 'metadata.json')
-                if not os.path.exists(meta_path):
-                    return jsonify({'error': 'metadata.json not found'}), 404
-                
-                import json
-                with open(meta_path, 'r') as f:
-                    meta = json.load(f)
-                
                 # Get SMILES and molecular structures for all results
                 results = []
                 for i, idx in enumerate(indices):
-                    entry = meta.get(str(idx))
+                    entry = MetadataService.instance().get_entry(idx)
                     if entry:
-                        # Use canonical_3d_smiles for display (stereochemistry enabled)
-                        result_smiles = entry['canonical_3d_smiles'] if entry['canonical_3d_smiles'] != 'N/A' else entry['canonical_2d_smiles']
+                        result_smiles = MetadataService.instance().get_smiles(idx)
                         if result_smiles:
-                            # Generate enhanced molecular structure with similarity highlighting
                             try:
-                                if RDKIT_AVAILABLE and pred_fp is not None:
-                                    # Use the enhanced draw_molecule function
-                                    from src.predictor import _fp_loader
-                                    if _fp_loader is not None:
-                                        pred_tensor = torch.tensor(pred_fp, dtype=torch.float)
-                                        enhanced_img = draw_molecule(
-                                            predicted_fp=pred_tensor,
-                                            retrieval_smiles=result_smiles,
-                                            fp_loader=_fp_loader,
-                                            need_to_clean_H=False,
-                                            img_size=400
-                                        )
-                                        # Convert to base64 for web display
-                                        enhanced_svg = pil_image_to_base64(enhanced_img)
-                                    else:
-                                        # Fallback to basic SVG
-                                        mol = Chem.MolFromSmiles(result_smiles)
-                                        if mol:
-                                            enhanced_svg = Draw.MolToSVG(mol, width=200, height=200)
-                                        else:
-                                            enhanced_svg = None
-                                else:
-                                    # Fallback to basic SVG
-                                    if RDKIT_AVAILABLE:
-                                        mol = Chem.MolFromSmiles(result_smiles)
-                                        if mol:
-                                            enhanced_svg = Draw.MolToSVG(mol, width=200, height=200)
-                                        else:
-                                            enhanced_svg = None
-                                    else:
-                                        enhanced_svg = None
-                            except Exception as e:
-                                logger.warning(f"Failed to render enhanced molecule for SMILES {result_smiles}: {e}")
-                                # Fallback to basic SVG
-                                try:
-                                    if RDKIT_AVAILABLE:
-                                        mol = Chem.MolFromSmiles(result_smiles)
-                                        if mol:
-                                            enhanced_svg = Draw.MolToSVG(mol, width=200, height=200)
-                                        else:
-                                            enhanced_svg = None
-                                    else:
-                                        enhanced_svg = None
-                                except Exception as e2:
-                                    logger.warning(f"Failed to render fallback molecule for SMILES {result_smiles}: {e2}")
-                                    enhanced_svg = None
-                            
-                            # Ensure similarity is a valid number
+                                fp_loader = ModelService.instance().get_fp_loader()
+                                pred_tensor = torch.tensor(pred_fp, dtype=torch.float) if pred_fp is not None else None
+                                enhanced_svg = MoleculeRenderer.instance().render(
+                                    result_smiles, predicted_fp=pred_tensor, fp_loader=fp_loader, img_size=MOLECULE_IMG_SIZE
+                                )
+                            except Exception:
+                                enhanced_svg = None
                             similarity_val = scores[i] if scores[i] is not None else 0.0
                             try:
                                 similarity_float = float(similarity_val)
-                                if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:  # Check for NaN
+                                if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:
                                     similarity_float = 0.0
                             except (ValueError, TypeError):
                                 similarity_float = 0.0
-                            
-                            # Extract database information
-                            coconut = entry.get('coconut')
-                            lotus = entry.get('lotus')
-                            npmrd = entry.get('npmrd')
-                            
-                            # Determine primary name and link
-                            primary_name = None
-                            primary_link = None
-                            
-                            if coconut:
-                                primary_name = coconut.get('name')
-                                coconut_id = coconut.get('coconut_id')
-                                if coconut_id:
-                                    primary_link = f"https://coconut.naturalproducts.net/compounds/{coconut_id}"
-                            elif lotus:
-                                primary_name = lotus.get('name')
-                                lotus_id = lotus.get('lotus_id')
-                                if lotus_id:
-                                    primary_link = f"https://lotus.naturalproducts.net/compound/lotus_id/{lotus_id}"
-                            elif npmrd:
-                                primary_name = npmrd.get('name')
-                                npmrd_id = npmrd.get('npmrd_id')
-                                if npmrd_id:
-                                    primary_link = f"https://np-mrd.org/natural_products/{npmrd_id}"
-                            
-                            # Prepare database links
-                            database_links = {}
-                            if coconut and coconut.get('coconut_id'):
-                                database_links['coconut'] = f"https://coconut.naturalproducts.net/compounds/{coconut['coconut_id']}"
-                            if lotus and lotus.get('lotus_id'):
-                                database_links['lotus'] = f"https://lotus.naturalproducts.net/compounds/{lotus['lotus_id']}"
-                            if npmrd and npmrd.get('npmrd_id'):
-                                database_links['npmrd'] = f"https://np-mrd.org/natural_products/{npmrd['npmrd_id']}"
-                            
-                            results.append({
-                                'index': idx,
-                                'smiles': result_smiles,
-                                'similarity': similarity_float,
-                                'svg': enhanced_svg,
-                                'name': primary_name,
-                                'primary_link': primary_link,
-                                'database_links': database_links,
-                                'np_pathway': None,  # Placeholder for future use
-                                'np_superclass': None,  # Placeholder for future use
-                                'np_class': None  # Placeholder for future use
-                            })
-                
-                resp = {'results': results}
+                            results.append(build_result_card(idx, entry, similarity_float, enhanced_svg))
+
+                resp = {'results': results, 'total_count': len(results), 'offset': int(payload.get('offset', 0)), 'limit': int(payload.get('limit', len(results)))}
+                # Apply pagination slice on results
+                try:
+                    offset = max(0, int(payload.get('offset', 0)))
+                    limit = int(payload.get('limit', len(results)))
+                    if limit < 0:
+                        limit = len(results)
+                    resp['results'] = results[offset: offset + limit]
+                except Exception:
+                    pass
                 if pred_fp is not None:
                     resp['pred_fp'] = pred_fp
-                return jsonify(resp)
+                from src.http import json_success
+                return json_success(resp)
             else:
                 logger.error(f"Unexpected predictor output: {out}")
                 return jsonify({'error': 'unexpected predictor output'}), 500
         else:
             return jsonify({'error': "provide 'raw' in request body"}), 400
     except Exception as e:
-        logger.error(f"Prediction error: {e}")
-        traceback.print_exc()
+        logger.error(f"Prediction error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500
 
 
 
 @app.route('/smiles-search', methods=['POST'])
+@(limiter.limit("20 per minute") if limiter else (lambda f: f))
 def smiles_search():
     """Search for similar molecules using a SMILES string."""
     global _model_initialized, _model_init_error, _model_loading
@@ -413,9 +392,18 @@ def smiles_search():
         if not payload or 'smiles' not in payload:
             return jsonify({'error': 'SMILES string required'}), 400
         
-        smiles = payload['smiles'].strip()
-        k = payload.get('k', 10)
-        
+        smiles, smiles_err = validate_smiles(payload.get('smiles'))
+        if smiles_err:
+            return jsonify({'error': smiles_err}), 400
+        k_raw = payload.get('k', DEFAULT_TOP_K)
+        k, k_err = validate_k(k_raw)
+        if k_err:
+            return jsonify({'error': k_err}), 400
+        if k <= 0:
+            return jsonify({'error': 'k must be positive integer'}), 400
+        if k > MAX_TOP_K:
+            k = MAX_TOP_K
+
         if not smiles:
             return jsonify({'error': 'SMILES string cannot be empty'}), 400
         
@@ -457,125 +445,41 @@ def smiles_search():
         sims = ranker._sims(pred.unsqueeze(0))  # (N, 1)
         sims_sorted, _ = torch.topk(sims.squeeze(), k=k, dim=0)
         
-        # Load metadata to get SMILES for all results
-        meta_path = os.path.join('data', 'metadata.json')
-        if not os.path.exists(meta_path):
-            return jsonify({'error': 'metadata.json not found'}), 404
-        
-        import json
-        with open(meta_path, 'r') as f:
-            meta = json.load(f)
-        
         # Get SMILES for all results
         results = []
         for i, idx in enumerate(idxs.squeeze().tolist()):
-            entry = meta.get(str(idx))
+            entry = MetadataService.instance().get_entry(idx)
             if entry:
-                # Use canonical_3d_smiles for display (stereochemistry enabled)
-                result_smiles = entry['canonical_3d_smiles'] if entry['canonical_3d_smiles'] != 'N/A' else entry['canonical_2d_smiles']
+                result_smiles = MetadataService.instance().get_smiles(idx)
                 if result_smiles:
-                    # Generate enhanced molecular structure with similarity highlighting
+                    # Render molecule (enhanced if possible)
                     try:
-                        if RDKIT_AVAILABLE:
-                            # Use the enhanced draw_molecule function
-                            from src.predictor import _fp_loader
-                            if _fp_loader is not None:
-                                # Convert query fingerprint to tensor
-                                query_tensor = torch.tensor(fp, dtype=torch.float)
-                                enhanced_img = draw_molecule(
-                                    predicted_fp=query_tensor,
-                                    retrieval_smiles=result_smiles,
-                                    fp_loader=_fp_loader,
-                                    need_to_clean_H=False,
-                                    img_size=400
-                                )
-                                # Convert to base64 for web display
-                                enhanced_svg = pil_image_to_base64(enhanced_img)
-                            else:
-                                # Fallback to basic SVG
-                                mol = Chem.MolFromSmiles(result_smiles)
-                                if mol:
-                                    enhanced_svg = Draw.MolToSVG(mol, width=200, height=200)
-                                else:
-                                    enhanced_svg = None
-                        else:
-                            enhanced_svg = None
-                    except Exception as e:
-                        logger.warning(f"Failed to render enhanced molecule for SMILES {result_smiles}: {e}")
-                        # Fallback to basic SVG
-                        try:
-                            if RDKIT_AVAILABLE:
-                                mol = Chem.MolFromSmiles(result_smiles)
-                                if mol:
-                                    enhanced_svg = Draw.MolToSVG(mol, width=200, height=200)
-                                else:
-                                    enhanced_svg = None
-                            else:
-                                enhanced_svg = None
-                        except Exception as e2:
-                            logger.warning(f"Failed to render fallback molecule for SMILES {result_smiles}: {e2}")
-                            enhanced_svg = None
-                    
-                    # Ensure similarity is a valid number
+                        fp_loader = ModelService.instance().get_fp_loader()
+                        query_tensor = torch.tensor(fp, dtype=torch.float)
+                        enhanced_svg = MoleculeRenderer.instance().render(
+                            result_smiles, predicted_fp=query_tensor, fp_loader=fp_loader, img_size=MOLECULE_IMG_SIZE
+                        )
+                    except Exception:
+                        enhanced_svg = None
+                    # Similarity value
                     similarity_val = sims_sorted[i] if sims_sorted[i] is not None else 0.0
                     try:
                         similarity_float = float(similarity_val)
-                        if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:  # Check for NaN
+                        if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:  # NaN guard
                             similarity_float = 0.0
                     except (ValueError, TypeError):
                         similarity_float = 0.0
-                    
-                    # Extract database information
-                    coconut = entry.get('coconut')
-                    lotus = entry.get('lotus')
-                    npmrd = entry.get('npmrd')
-                    
-                    # Determine primary name and link
-                    primary_name = None
-                    primary_link = None
-                    
-                    if coconut:
-                        primary_name = coconut.get('name')
-                        coconut_id = coconut.get('coconut_id')
-                        if coconut_id:
-                            primary_link = f"https://coconut.naturalproducts.net/compounds/{coconut_id}"
-                    elif lotus:
-                        primary_name = lotus.get('name')
-                        lotus_id = lotus.get('lotus_id')
-                        if lotus_id:
-                            primary_link = f"https://lotus.naturalproducts.net/compounds/{lotus_id}"
-                    elif npmrd:
-                        primary_name = npmrd.get('name')
-                        npmrd_id = npmrd.get('npmrd_id')
-                        if npmrd_id:
-                            primary_link = f"https://np-mrd.org/natural_products/{npmrd_id}"
-                    
-                    # Prepare database links
-                    database_links = {}
-                    if coconut and coconut.get('coconut_id'):
-                        database_links['coconut'] = f"https://coconut.naturalproducts.net/compounds/{coconut['coconut_id']}"
-                    if lotus and lotus.get('lotus_id'):
-                        database_links['lotus'] = f"https://lotus.naturalproducts.net/compounds/{lotus['lotus_id']}"
-                    if npmrd and npmrd.get('npmrd_id'):
-                        database_links['npmrd'] = f"https://np-mrd.org/natural_products/{npmrd['npmrd_id']}"
-                    
-                    results.append({
-                        'index': idx,
-                        'smiles': result_smiles,
-                        'similarity': similarity_float,
-                        'svg': enhanced_svg,
-                        'name': primary_name,
-                        'primary_link': primary_link,
-                        'database_links': database_links,
-                        'np_pathway': None,
-                        'np_superclass': None,
-                        'np_class': None
-                    })
-        
-        return jsonify({
-            'results': results,
-            'query_smiles': smiles
-        })
+                    # Build card
+                    results.append(build_result_card(idx, entry, similarity_float, enhanced_svg))
+
+        # Pagination
+        offset = max(0, int(payload.get('offset', 0)))
+        limit = int(payload.get('limit', len(results)))
+        if limit < 0:
+            limit = len(results)
+        paged = results[offset: offset + limit]
+        from src.http import json_success
+        return json_success({'results': paged, 'total_count': len(results), 'offset': offset, 'limit': limit, 'query_smiles': smiles})
         
     except Exception as e:
         logger.error(f"SMILES search error: {e}", exc_info=True)
@@ -583,6 +487,7 @@ def smiles_search():
 
 
 @app.route('/analyze', methods=['POST'])
+@(limiter.limit("10 per minute") if limiter else (lambda f: f))
 def analyze():
     """Analysis endpoint for detailed molecular fingerprint analysis."""
     global _model_initialized, _model_init_error, _model_loading
@@ -629,14 +534,71 @@ def analyze():
             if current_pred_fp is None or original_pred_fp is None:
                 return jsonify({'error': 'Failed to generate fingerprints for analysis'}), 500
             
+            # Get retrieval molecule fingerprint from rankingset
+            retrieved_molecule_fp = None
+            retrieved_molecule_fp_indices = None
+            try:
+                from src.predictor import _rankingset_cache
+                if _rankingset_cache is not None:
+                    # Extract fingerprint row for target_index
+                    if _rankingset_cache.layout == torch.sparse_csr:
+                        # For sparse CSR, extract row
+                        row_start = _rankingset_cache.crow_indices()[target_index]
+                        row_end = _rankingset_cache.crow_indices()[target_index + 1]
+                        if row_start < row_end:
+                            col_indices = _rankingset_cache.col_indices()[row_start:row_end]
+                            values = _rankingset_cache.values()[row_start:row_end]
+                            # Build dense fingerprint
+                            retrieved_fp_dense = torch.zeros(_rankingset_cache.size(1), dtype=torch.float32)
+                            retrieved_fp_dense[col_indices] = values
+                            retrieved_molecule_fp = retrieved_fp_dense.tolist()
+                            # Extract indices (bit positions that are set)
+                            retrieved_molecule_fp_indices = col_indices.cpu().tolist()
+                        else:
+                            retrieved_molecule_fp = [0.0] * _rankingset_cache.size(1)
+                            retrieved_molecule_fp_indices = []
+                    else:
+                        # For dense
+                        retrieved_fp_tensor = _rankingset_cache[target_index].cpu()
+                        retrieved_molecule_fp = retrieved_fp_tensor.tolist()
+                        # Extract indices where value is above threshold (0.5 for binary-like)
+                        retrieved_molecule_fp_indices = torch.nonzero(retrieved_fp_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
+            except Exception as e:
+                logger.warning(f"Failed to get retrieval molecule fingerprint: {e}")
+                retrieved_molecule_fp = None
+                retrieved_molecule_fp_indices = None
+            
+            # Extract predicted fingerprint indices
+            predicted_fp_indices = None
+            if current_pred_fp:
+                try:
+                    pred_tensor = torch.tensor(current_pred_fp, dtype=torch.float32)
+                    # For probabilistic fingerprints, use threshold of 0.5 or find max values
+                    # Check if it's binary-like (all values are 0 or 1) or probabilistic
+                    max_val = pred_tensor.max().item()
+                    if max_val <= 1.0:
+                        # Use 0.5 threshold for probabilistic
+                        predicted_fp_indices = torch.nonzero(pred_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
+                    else:
+                        # Use max value threshold
+                        threshold = max_val * 0.5
+                        predicted_fp_indices = torch.nonzero(pred_tensor > threshold, as_tuple=False).squeeze(-1).tolist()
+                except Exception as e:
+                    logger.warning(f"Failed to extract predicted fingerprint indices: {e}")
+                    predicted_fp_indices = None
+            
         except Exception as e:
             logger.error(f"Error generating fingerprints: {e}")
             return jsonify({'error': f'Failed to generate fingerprints: {str(e)}'}), 500
         
-        # Generate visualizations
+        # Generate visualizations and prepare response
         result = {
             'target_smiles': target_smiles,
-            'target_index': target_index
+            'target_index': target_index,
+            'predicted_fp': current_pred_fp,
+            'retrieved_molecule_fp': retrieved_molecule_fp,
+            'predicted_fp_indices': predicted_fp_indices,
+            'retrieved_molecule_fp_indices': retrieved_molecule_fp_indices
         }
         
         try:
@@ -652,7 +614,7 @@ def analyze():
                     retrieval_smiles=target_smiles,
                     fp_loader=_fp_loader,
                     need_to_clean_H=False,
-                    img_size=400
+                    img_size=MOLECULE_IMG_SIZE
                 )
                 result['similarity_visualization'] = pil_image_to_base64(similarity_img)
                 
@@ -663,7 +625,7 @@ def analyze():
                     retrieval_smiles=target_smiles,
                     fp_loader=_fp_loader,
                     need_to_clean_H=False,
-                    img_size=400
+                    img_size=MOLECULE_IMG_SIZE
                 )
                 result['change_visualization'] = pil_image_to_base64(change_img)
                 
@@ -703,8 +665,191 @@ def analyze():
             result['similarity_visualization'] = None
             result['change_visualization'] = None
         
-        return jsonify(result)
+        # Secondary retrieval computed within analyze (avoid extra API call)
+        try:
+            # Only proceed if both fingerprints are present
+            if current_pred_fp is not None and retrieved_molecule_fp is not None:
+                pred_tensor = torch.tensor(current_pred_fp, dtype=torch.float32)
+                # Build retrieved tensor from list
+                retrieved_tensor = torch.tensor(retrieved_molecule_fp, dtype=torch.float32)
+                
+                # Clamp to [0,1]
+                pred_tensor = torch.clamp(pred_tensor, 0.0, 1.0)
+                retrieved_tensor = torch.clamp(retrieved_tensor, 0.0, 1.0)
+                
+                # Compute overlap and difference
+                overlap = torch.min(pred_tensor, retrieved_tensor)
+                difference_fp = torch.clamp(pred_tensor - overlap, 0.0, 1.0)
+                
+                if difference_fp.sum() < 1e-6:
+                    # Equal fingerprints (no remaining bits)
+                    result['secondary_skipped'] = True
+                    result['secondary_message'] = 'Predicted fingerprint and selected molecule fingerprint are identical. No remaining bits to search.'
+                else:
+                    # Run retrieval on the difference fingerprint
+                    from src.predictor import _rankingset_cache, _fp_loader, _args
+                    if _rankingset_cache is None:
+                        if _fp_loader is None:
+                            raise RuntimeError('Model not loaded')
+                        _rankingset_cache = _fp_loader.load_rankingset(_args.fp_type)
+                    ranker = RankingSet(store=_rankingset_cache, metric="cosine")
+                    idxs = ranker.retrieve_idx(difference_fp.unsqueeze(0), n=10)
+                    sims = ranker._sims(difference_fp.unsqueeze(0))
+                    sims_sorted, _ = torch.topk(sims.squeeze(), k=min(10, sims.numel()), dim=0)
+                    
+                    # Load metadata
+                    meta_path = os.path.join('data', 'metadata.json')
+                    if not os.path.exists(meta_path):
+                        raise FileNotFoundError('metadata.json not found')
+                    import json
+                    with open(meta_path, 'r') as f:
+                        meta = json.load(f)
+                    
+                    secondary_results = []
+                    for i, idx in enumerate(idxs.squeeze().tolist()):
+                        entry = MetadataService.instance().get_entry(idx)
+                        if not entry:
+                            continue
+                        result_smiles = MetadataService.instance().get_smiles(idx)
+                        # Render molecule using services
+                        try:
+                            fp_loader = ModelService.instance().get_fp_loader()
+                            enhanced_svg = MoleculeRenderer.instance().render(
+                                result_smiles, predicted_fp=difference_fp, fp_loader=fp_loader, img_size=MOLECULE_IMG_SIZE
+                            )
+                        except Exception:
+                            enhanced_svg = None
+                        # Similarity
+                        similarity_val = sims_sorted[i] if sims_sorted.numel() > i else 0.0
+                        try:
+                            similarity_float = float(similarity_val)
+                            if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:
+                                similarity_float = 0.0
+                        except (ValueError, TypeError):
+                            similarity_float = 0.0
+                        # Append card
+                        secondary_results.append(build_result_card(idx, entry, similarity_float, enhanced_svg))
+                    result['secondary_results'] = secondary_results
+                    result['difference_fp'] = difference_fp.tolist()
+        except Exception as e:
+            logger.warning(f"Failed to compute secondary retrieval in analyze: {e}")
+
+        from src.http import json_success
+        return json_success(result)
         
     except Exception as e:
         logger.error(f"Analysis error: {e}", exc_info=True)
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/secondary-retrieval', methods=['POST'])
+@(limiter.limit("20 per minute") if limiter else (lambda f: f))
+def secondary_retrieval():
+    """Secondary retrieval endpoint using difference fingerprint (predicted - overlap)."""
+    global _model_initialized, _model_init_error, _model_loading
+    if not _model_initialized:
+        if _model_loading:
+            return jsonify({'error': 'Model is still loading in background. Please try again in a moment.'}), 503
+        elif _model_init_error:
+            return jsonify({'error': f'Model not available: {_model_init_error}'}), 503
+        else:
+            return jsonify({'error': 'Model initialization not started. Please try again in a moment.'}), 503
+    
+    try:
+        payload = request.get_json()
+        if not payload:
+            return jsonify({'error': 'JSON body required'}), 400
+        
+        predicted_fp = payload.get('predicted_fp')
+        retrieved_fp = payload.get('retrieved_fp')
+        k, k_err = validate_k(payload.get('k', DEFAULT_TOP_K))
+        if k_err:
+            return jsonify({'error': k_err}), 400
+        if k <= 0:
+            return jsonify({'error': 'k must be positive integer'}), 400
+        if k > MAX_TOP_K:
+            k = MAX_TOP_K
+
+        if not predicted_fp or not retrieved_fp:
+            return jsonify({'error': 'Missing required fields: predicted_fp, retrieved_fp'}), 400
+        
+        logger.info(f"Secondary retrieval with k={k}")
+        
+        # Convert to tensors
+        predicted_tensor = torch.tensor(predicted_fp, dtype=torch.float32)
+        retrieved_tensor = torch.tensor(retrieved_fp, dtype=torch.float32)
+        
+        # Ensure fingerprints are in valid range [0, 1]
+        predicted_tensor = torch.clamp(predicted_tensor, 0.0, 1.0)
+        retrieved_tensor = torch.clamp(retrieved_tensor, 0.0, 1.0)
+        
+        # Compute overlap (element-wise minimum for binary/probabilistic fingerprints)
+        overlap = torch.min(predicted_tensor, retrieved_tensor)
+        
+        # Compute difference: predicted_fp - overlap
+        difference_fp = predicted_tensor - overlap
+        difference_fp = torch.clamp(difference_fp, 0.0, 1.0)
+        
+        # Check if difference fingerprint is all zeros
+        if difference_fp.sum() < 1e-6:
+            logger.warning("Difference fingerprint is all zeros, returning empty results")
+            return jsonify({'results': [], 'difference_fp': difference_fp.tolist()})
+        
+        # Use difference fingerprint directly (already in [0,1] range)
+        # RankingSet will handle normalization internally
+        difference_prob = difference_fp
+        
+        # Use the existing RankingSet to retrieve results
+        from src.predictor import _rankingset_cache, _fp_loader
+        if _rankingset_cache is None:
+            if _fp_loader is None:
+                return jsonify({'error': 'Model not loaded'}), 503
+            from src.predictor import _args
+            _rankingset_cache = _fp_loader.load_rankingset(_args.fp_type)
+        
+        ranker = RankingSet(store=_rankingset_cache, metric="cosine")
+        
+        # Retrieve top-k indices using difference fingerprint
+        idxs = ranker.retrieve_idx(difference_prob.unsqueeze(0), n=k)
+        
+        # Get similarity scores for the retrieved indices
+        sims = ranker._sims(difference_prob.unsqueeze(0))
+        sims_sorted, _ = torch.topk(sims.squeeze(), k=k, dim=0)
+        
+        # Build results using services
+        results = []
+        for i, idx in enumerate(idxs.squeeze().tolist()):
+            entry = MetadataService.instance().get_entry(idx)
+            if not entry:
+                continue
+            result_smiles = MetadataService.instance().get_smiles(idx)
+            # Render with services
+            try:
+                fp_loader = ModelService.instance().get_fp_loader()
+                enhanced_svg = MoleculeRenderer.instance().render(
+                    result_smiles, predicted_fp=difference_prob, fp_loader=fp_loader, img_size=MOLECULE_IMG_SIZE
+                )
+            except Exception:
+                enhanced_svg = None
+            # Similarity
+            similarity_val = sims_sorted[i] if sims_sorted[i] is not None else 0.0
+            try:
+                similarity_float = float(similarity_val)
+                if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:
+                    similarity_float = 0.0
+            except (ValueError, TypeError):
+                similarity_float = 0.0
+            results.append(build_result_card(idx, entry, similarity_float, enhanced_svg))
+        
+        # Pagination
+        offset = max(0, int(payload.get('offset', 0)))
+        limit = int(payload.get('limit', len(results)))
+        if limit < 0:
+            limit = len(results)
+        paged = results[offset: offset + limit]
+        from src.http import json_success
+        return json_success({'results': paged, 'total_count': len(results), 'offset': offset, 'limit': limit, 'difference_fp': difference_fp.tolist()})
+        
+    except Exception as e:
+        logger.error(f"Secondary retrieval error: {e}", exc_info=True)
         return jsonify({'error': str(e)}), 500

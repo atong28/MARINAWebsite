@@ -13,11 +13,10 @@ services:
       - ./data:/app/data:ro
       # Mount logs directory
       - ./logs:/app/logs:rw
-    ports:
-      - "${BACKEND_PORT:-5000}:5000"
+    # No port mapping - only accessible internally via nginx
     environment:
       # Server configuration
-      - PORT=${BACKEND_PORT:-5000}
+      - PORT=5000
       - HOST=${BACKEND_HOST:-0.0.0.0}
       # Data configuration
       - DATA_DIR=/app/data
@@ -34,8 +33,8 @@ services:
       - marina-net
     restart: unless-stopped
     healthcheck:
-      # Health check uses internal container port (5000), not mapped port
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      # Health check uses internal container port (5000)
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3
@@ -45,30 +44,39 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
+      args:
+        VITE_API_BASE: /api
     container_name: marina-frontend
     volumes:
-      # For production: static files are built into image
-      # For development: uncomment below and use dev Dockerfile variant
-      - ./frontend/src:/app/src:rw
-      - ./frontend/public:/app/public:ro
-      - ./frontend/index.html:/app/index.html:ro
-      - ./frontend/vite.config.ts:/app/vite.config.ts:ro
-      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
-      - ./frontend/package.json:/app/package.json:ro
-    ports:
-      - "${FRONTEND_PORT:-3000}:80"
-    environment:
-      # VITE_API_BASE is constructed from BACKEND_PORT if not explicitly set
-      - VITE_API_BASE=${VITE_API_BASE:-http://host.docker.internal:${BACKEND_PORT:-5000}}
-    depends_on:
-      backend:
-        condition: service_healthy
+      # Export dist directory for nginx to use
+      - frontend_dist:/dist:ro
+    # No port mapping - only accessible internally via nginx
     networks:
       - marina-net
     restart: unless-stopped
-    # For development with hot reload, use a dev Dockerfile that runs: npm run dev -- --host 0.0.0.0
+
+  nginx:
+    image: nginx:alpine
+    container_name: marina-nginx
+    ports:
+      - "${NGINX_PORT:-8002}:80"
+    volumes:
+      # Mount nginx configuration
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+      # Mount frontend static files from frontend container volume
+      - frontend_dist:/usr/share/nginx/html:ro
+    depends_on:
+      backend:
+        condition: service_healthy
+      frontend:
+        condition: service_started
+    networks:
+      - marina-net
+    restart: unless-stopped
+
+volumes:
+  frontend_dist:
 
 networks:
   marina-net:
     driver: bridge
-

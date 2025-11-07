@@ -8,7 +8,7 @@ import ResultsGrid from '../components/results/ResultsGrid'
 import StatusIndicator from '../components/common/StatusIndicator'
 import './MainPage.css'
 
-const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || 'http://localhost:5000'
+const API_BASE = (import.meta.env.VITE_API_BASE as string | undefined) || '/api'
 const API_DOCS_URL = `${API_BASE.replace(/\/$/, '')}/docs`
 
 function MainPage() {

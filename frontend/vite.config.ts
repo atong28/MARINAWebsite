@@ -14,7 +14,9 @@ export default defineConfig(({ mode }) => {
   // These should be set in root .env file (single source of truth)
   const frontendPort = parseInt(env.FRONTEND_PORT || '3000', 10)
   const backendPort = parseInt(env.BACKEND_PORT || '5000', 10)
-  const apiBase = env.VITE_API_BASE || `http://localhost:${backendPort}`
+  // In production, use relative path '/api' for nginx reverse proxy
+  // In development, can use full URL or relative path
+  const apiBase = env.VITE_API_BASE || (mode === 'production' ? '/api' : `http://localhost:${backendPort}/api`)
   
   return {
   plugins: [react()],
@@ -22,14 +24,14 @@ export default defineConfig(({ mode }) => {
       port: frontendPort,
     proxy: {
       '/api': {
-          target: apiBase,
+          target: `http://localhost:${backendPort}`,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, '')
       }
     }
   },
     // Inject VITE_API_BASE into client code so it's available via import.meta.env.VITE_API_BASE
-    // This allows api.ts to use the BACKEND_PORT from root .env file
+    // In production, this will be '/api' for nginx reverse proxy
     define: {
       'import.meta.env.VITE_API_BASE': JSON.stringify(apiBase)
     },

@@ -4,9 +4,9 @@
 import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query'
 
 // Get API base URL from environment variable
-// VITE_API_BASE should be set in root .env file
-// Falls back to localhost:5000 (default BACKEND_PORT) if not set
-const API_BASE = import.meta.env.VITE_API_BASE || 'http://localhost:5000'
+// In production, use relative path '/api' so it works with nginx reverse proxy
+// For development, VITE_API_BASE can be set to full URL (e.g., http://localhost:5000/api)
+const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
 // Types (will be generated from OpenAPI schema in production)
 export interface SpectralDataInput {

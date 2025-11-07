@@ -16,19 +16,18 @@ RUN npm ci
 COPY src/ ./src/
 COPY index.html ./
 
+# Set production API base URL for build
+ARG VITE_API_BASE=/api
+ENV VITE_API_BASE=${VITE_API_BASE}
+
 # Build
 RUN npm run build
 
-# Stage 2: Production (serve static files with nginx or serve from backend)
-FROM nginx:alpine
-
-# Copy built files
-COPY --from=build /app/dist /usr/share/nginx/html
-
-# Copy nginx config (optional)
-# COPY nginx.conf /etc/nginx/conf.d/default.conf
-
-EXPOSE 80
-
-CMD ["nginx", "-g", "daemon off;"]
+# Stage 2: Copy dist to volume mount point
+# The dist directory will be shared with nginx via docker volume
+FROM alpine:latest
+RUN apk add --no-cache bash
+COPY --from=build /app/dist /dist
+# Keep container running so volume stays mounted
+CMD ["sh", "-c", "while true; do sleep 3600; done"]
 

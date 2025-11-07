@@ -20,6 +20,83 @@
   cursor: pointer;
 }
 
+.molecule-info-section {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 15px 20px;
+  background: white;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 15px;
+}
+
+.smiles-display {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex: 1;
+  min-width: 200px;
+}
+
+.smiles-display code {
+  background: #f8f9fa;
+  padding: 4px 8px;
+  border-radius: 4px;
+  font-family: 'Courier New', monospace;
+  font-size: 0.9em;
+  color: #333;
+  word-break: break-all;
+}
+
+.database-buttons {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.database-btn {
+  padding: 6px 12px;
+  background: #6c757d;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.9em;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.database-btn:hover {
+  background: #5a6268;
+}
+
+.database-btn.coconut {
+  background: #17a2b8;
+}
+
+.database-btn.coconut:hover {
+  background: #138496;
+}
+
+.database-btn.lotus {
+  background: #28a745;
+}
+
+.database-btn.lotus:hover {
+  background: #218838;
+}
+
+.database-btn.npmrd {
+  background: #ffc107;
+  color: #212529;
+}
+
+.database-btn.npmrd:hover {
+  background: #e0a800;
+}
+
 .analysis-layout {
   display: grid;
   grid-template-columns: 1fr 1fr;

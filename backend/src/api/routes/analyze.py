@@ -63,18 +63,12 @@ async def analyze(request: Request, data: AnalysisRequest):
         )
     
     try:
-        # Convert to tensor
         retrieved_tensor = torch.tensor(retrieved_fp, dtype=torch.float32)
-        
-        logger.info(f"[Analyze] Processing retrieved_fp with length={retrieved_tensor.shape[0]}")
-        
-        # Extract retrieved fingerprint indices
         retrieved_molecule_fp_indices = []
         try:
             retrieved_molecule_fp_indices = torch.nonzero(retrieved_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
             if not isinstance(retrieved_molecule_fp_indices, list):
                 retrieved_molecule_fp_indices = [retrieved_molecule_fp_indices] if retrieved_molecule_fp_indices is not None else []
-            logger.info(f"[Analyze] Extracted {len(retrieved_molecule_fp_indices)} retrieved fingerprint indices")
         except Exception as e:
             logger.error(f"[Analyze] Failed to extract retrieved fingerprint indices: {e}", exc_info=True)
             raise HTTPException(
@@ -88,29 +82,17 @@ async def analyze(request: Request, data: AnalysisRequest):
                 detail="No active fingerprint bits found in retrieved_fp"
             )
         
-        # Compute bit environments for retrieved indices
-        logger.info(f"[Analyze] Computing bit environments for {len(retrieved_molecule_fp_indices)} bits")
         try:
-                bit_environments = compute_bit_environments_batch(
-                    smiles=target_smiles,
-                fp_indices=retrieved_molecule_fp_indices,
-                    fp_loader=fp_loader
-                )
-                
-                logger.info(
-                    f"[Analyze] Computed {len(bit_environments)} bit environments: "
-                f"total_bits={len(retrieved_molecule_fp_indices)}, "
-                f"valid_environments={len(bit_environments)}"
+            bit_environments = compute_bit_environments_batch(
+                smiles=target_smiles,
+            fp_indices=retrieved_molecule_fp_indices,
+                fp_loader=fp_loader
             )
         except Exception as e:
-            logger.error(f"[Analyze] Failed to compute bit environments: {e}", exc_info=True)
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail=f"Failed to compute bit environments: {str(e)}"
                 )
-                
-                # Render molecule SVG with embedded overlays
-        logger.info(f"[Analyze] Rendering molecule SVG with {len(bit_environments)} bit environments")
         molecule_renderer = MoleculeRenderer.instance()
         molecule_svg = molecule_renderer.render(
             smiles=target_smiles,
@@ -123,8 +105,6 @@ async def analyze(request: Request, data: AnalysisRequest):
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Molecule rendering failed: renderer returned None"
             )
-        
-        logger.info(f"[Analyze] Rendered molecule SVG with {len(molecule_svg)} chars")
         
         return AnalysisResponse(
             retrieved_molecule_fp_indices=retrieved_molecule_fp_indices,

@@ -5,9 +5,10 @@ import './ResultsGrid.css'
 interface ResultsGridProps {
   results: ResultCard[]
   onAnalyze: (index: number) => void
+  showAnalyzeButton?: boolean
 }
 
-function ResultsGrid({ results, onAnalyze }: ResultsGridProps) {
+function ResultsGrid({ results, onAnalyze, showAnalyzeButton = true }: ResultsGridProps) {
   return (
     <div className="results-grid">
       <h2>Results ({results.length})</h2>
@@ -18,6 +19,7 @@ function ResultsGrid({ results, onAnalyze }: ResultsGridProps) {
             result={result}
             position={index + 1}
             onAnalyze={() => onAnalyze(index)}
+            showAnalyzeButton={showAnalyzeButton}
           />
         ))}
       </div>

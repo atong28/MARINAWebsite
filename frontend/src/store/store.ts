@@ -4,6 +4,14 @@
 import { create } from 'zustand'
 import { ResultCard } from '../services/api'
 
+interface SpectralDataSnapshot {
+  hsqc: number[]
+  h_nmr: number[]
+  c_nmr: number[]
+  mass_spec: number[]
+  mw: number | null
+}
+
 interface MainPageState {
   // Spectral input data
   hsqc: number[]
@@ -43,6 +51,13 @@ interface AnalysisPageState {
   
   // Analysis results
   moleculeSvgWithOverlays: string | null  // SVG with embedded overlays from analyze endpoint
+  originalSpectralData: SpectralDataSnapshot | null
+  originalPredictedFp: number[] | null
+  originalSimilarityMap: string | null
+  ablationSpectralData: SpectralDataSnapshot
+  ablationPredictedFp: number[] | null
+  ablationSimilarityMap: string | null
+  ablationSeedKey: string | null
   
   // Actions
   setSelectedMolecule: (molecule: ResultCard | null) => void
@@ -50,6 +65,14 @@ interface AnalysisPageState {
   setRetrievedFpIndices: (indices: number[]) => void
   setBitEnvironments: (envs: Record<number, any>) => void
   setMoleculeSvgWithOverlays: (svg: string | null) => void
+  setOriginalSpectralData: (data: SpectralDataSnapshot | null) => void
+  setOriginalPredictedFp: (fp: number[] | null) => void
+  setOriginalSimilarityMap: (map: string | null) => void
+  setAblationSpectralData: (data: SpectralDataSnapshot) => void
+  setAblationPredictedFp: (fp: number[] | null) => void
+  setAblationSimilarityMap: (map: string | null) => void
+  setAblationSeedKey: (key: string | null) => void
+  resetAblation: () => void
   clearAnalysis: () => void
 }
 
@@ -88,18 +111,63 @@ export const useAnalysisPageStore = create<AnalysisPageState>((set) => ({
   retrievedFpIndices: [],
   bitEnvironments: {},
   moleculeSvgWithOverlays: null,
+  originalSpectralData: null,
+  originalPredictedFp: null,
+  originalSimilarityMap: null,
+  ablationSpectralData: {
+    hsqc: [],
+    h_nmr: [],
+    c_nmr: [],
+    mass_spec: [],
+    mw: null,
+  },
+  ablationPredictedFp: null,
+  ablationSimilarityMap: null,
+  ablationSeedKey: null,
   
   setSelectedMolecule: (molecule) => set({ selectedMolecule: molecule }),
   setSelectedBits: (bits) => set({ selectedBits: bits }),
   setRetrievedFpIndices: (indices) => set({ retrievedFpIndices: indices }),
   setBitEnvironments: (envs) => set({ bitEnvironments: envs }),
   setMoleculeSvgWithOverlays: (svg) => set({ moleculeSvgWithOverlays: svg }),
+  setOriginalSpectralData: (data) => set({ originalSpectralData: data }),
+  setOriginalPredictedFp: (fp) => set({ originalPredictedFp: fp }),
+  setOriginalSimilarityMap: (map) => set({ originalSimilarityMap: map }),
+  setAblationSpectralData: (data) => set({ ablationSpectralData: data }),
+  setAblationPredictedFp: (fp) => set({ ablationPredictedFp: fp }),
+  setAblationSimilarityMap: (map) => set({ ablationSimilarityMap: map }),
+  setAblationSeedKey: (key) => set({ ablationSeedKey: key }),
+  resetAblation: () => set({
+    ablationSpectralData: {
+      hsqc: [],
+      h_nmr: [],
+      c_nmr: [],
+      mass_spec: [],
+      mw: null,
+    },
+    ablationPredictedFp: null,
+    ablationSimilarityMap: null,
+    ablationSeedKey: null,
+  }),
   clearAnalysis: () => set({
     selectedMolecule: null,
     selectedBits: new Set(),
     retrievedFpIndices: [],
     bitEnvironments: {},
     moleculeSvgWithOverlays: null,
+    originalSpectralData: null,
+    originalPredictedFp: null,
+    originalSimilarityMap: null,
+    ablationSpectralData: {
+      hsqc: [],
+      h_nmr: [],
+      c_nmr: [],
+      mass_spec: [],
+      mw: null,
+    },
+    ablationPredictedFp: null,
+    ablationSimilarityMap: null,
+    ablationSeedKey: null,
   }),
 }))
 

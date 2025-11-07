@@ -39,7 +39,15 @@ setup_cors(app)
 setup_error_handlers(app)
 limiter = setup_rate_limiting(app)
 
-from src.api.routes import health, predict, smiles_search, analyze, secondary_retrieval
+from src.api.routes import (
+    health,
+    predict,
+    smiles_search,
+    analyze,
+    secondary_retrieval,
+    ablation,
+    fingerprints,
+)
 
 # Include routers
 app.include_router(health.router, tags=["health"])
@@ -47,6 +55,8 @@ app.include_router(predict.router, tags=["prediction"])
 app.include_router(smiles_search.router, tags=["search"])
 app.include_router(analyze.router, tags=["analysis"])
 app.include_router(secondary_retrieval.router, tags=["retrieval"])
+app.include_router(ablation.router, tags=["analysis"])
+app.include_router(fingerprints.router, tags=["fingerprints"])
 
 # Serve static files (for frontend)
 static_dir = Path(__file__).parent.parent.parent.parent / "frontend" / "dist"

@@ -4,36 +4,109 @@
   padding: 15px;
   background: white;
   box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  height: 100%;
 }
 
-.result-header {
+.result-top-line {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  margin-bottom: 15px;
+  margin-bottom: 10px;
 }
 
 .result-position {
   font-weight: bold;
   color: #666;
+  font-size: 1.1em;
 }
 
-.result-header h3 {
-  margin: 0;
-  flex: 1;
-  text-align: center;
-}
-
-.similarity {
-  color: #007bff;
+.similarity-badge {
+  background: #007bff;
+  color: white;
+  padding: 4px 12px;
+  border-radius: 12px;
   font-weight: bold;
+  font-size: 0.9em;
+}
+
+.result-name-section {
+  width: 100%;
+}
+
+.result-name {
+  margin: 0;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  scrollbar-width: thin;
+  -ms-overflow-style: -ms-autohiding-scrollbar;
+  font-size: 1em;
+  font-weight: normal;
 }
 
 .result-footer {
   display: flex;
   justify-content: space-between;
-  margin-top: 15px;
+  align-items: flex-end;
   gap: 10px;
+  margin-top: auto;
+}
+
+.database-links {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.database-btn {
+  padding: 6px 12px;
+  background: #6c757d;
+  color: white;
+  text-decoration: none;
+  border-radius: 4px;
+  font-size: 0.9em;
+  transition: background 0.2s;
+  white-space: nowrap;
+}
+
+.database-btn:hover {
+  background: #5a6268;
+}
+
+.database-btn.coconut {
+  background: #17a2b8;
+}
+
+.database-btn.coconut:hover {
+  background: #138496;
+}
+
+.database-btn.lotus {
+  background: #28a745;
+}
+
+.database-btn.lotus:hover {
+  background: #218838;
+}
+
+.database-btn.npmrd {
+  background: #ffc107;
+  color: #212529;
+}
+
+.database-btn.npmrd:hover {
+  background: #e0a800;
+}
+
+.local-dataset-note {
+  color: #6c757d;
+  font-size: 0.9em;
+  font-style: italic;
 }
 
 .analyze-btn {
@@ -43,6 +116,7 @@
   border: none;
   border-radius: 4px;
   cursor: pointer;
+  white-space: nowrap;
 }
 
 .analyze-btn:hover {

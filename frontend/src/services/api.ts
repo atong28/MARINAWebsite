@@ -78,6 +78,34 @@ export interface HealthResponse {
   uptime_seconds: number
 }
 
+export interface SecondaryRetrievalRequest {
+  predicted_fp: number[]
+  retrieved_fp: number[]
+  k?: number
+}
+
+export interface SecondaryRetrievalResponse {
+  results: ResultCard[]
+  total_count: number
+  difference_fp?: number[]
+}
+
+export interface AblationRequest {
+  raw: SpectralDataInput
+  smiles: string
+  bit_threshold?: number
+  max_bits?: number
+  reference_fp?: number[]
+}
+
+export interface AblationResponse {
+  pred_fp: number[]
+  active_bit_indices: number[]
+  similarity_map?: string | null
+  bit_environments: Record<number, any>
+  change_overlay_svg?: string | null
+}
+
 // API functions
 async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
   try {
@@ -130,6 +158,18 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
     }),
+  
+  secondaryRetrieval: (data: SecondaryRetrievalRequest) =>
+    fetchJson<SecondaryRetrievalResponse>('/secondary-retrieval', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  ablation: (data: AblationRequest) =>
+    fetchJson<AblationResponse>('/ablation', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
 }
 
 // React Query hooks
@@ -159,6 +199,20 @@ export function useSmilesSearch(options?: UseMutationOptions<SmilesSearchRespons
 export function useAnalyze(options?: UseMutationOptions<AnalysisResponse, Error, AnalysisRequest>) {
   return useMutation({
     mutationFn: api.analyze,
+    ...options,
+  })
+}
+
+export function useSecondaryRetrieval(options?: UseMutationOptions<SecondaryRetrievalResponse, Error, SecondaryRetrievalRequest>) {
+  return useMutation({
+    mutationFn: api.secondaryRetrieval,
+    ...options,
+  })
+}
+
+export function useAblation(options?: UseMutationOptions<AblationResponse, Error, AblationRequest>) {
+  return useMutation({
+    mutationFn: api.ablation,
     ...options,
   })
 }

@@ -10,6 +10,7 @@ from src.domain.fingerprint.fp_loader import EntropyFPLoader
 from src.domain.fingerprint.fp_utils import get_bitinfos, _mk_rdkit
 import torch
 from functools import lru_cache
+import xml.etree.ElementTree as ET
 
 def compute_cos_sim(fp1: torch.Tensor, fp2: torch.Tensor, eps: float = 1e-12) -> float:
     """
@@ -550,7 +551,10 @@ def compute_bit_environment(smiles: str, bit_index: int, radius: int):
 def render_molecule_with_overlays(
     smiles: str,
     bit_environments: Dict[int, dict],
-    img_size: int = 400
+    img_size: int = 400,
+    bit_colors: Optional[Dict[int, Dict[str, str]]] = None,
+    default_color: str = 'rgba(16,185,129,0.7)',
+    default_fill_color: str = 'rgba(16,185,129,0.25)'
 ) -> str:
     """
     Render molecule SVG with embedded bit environment overlays.
@@ -563,133 +567,42 @@ def render_molecule_with_overlays(
     Returns:
         SVG string with embedded overlay elements (initially hidden)
     """
-    from rdkit import Chem
-    from rdkit.Chem import rdDepictor
-    from rdkit.Chem.Draw import rdMolDraw2D
-    import xml.etree.ElementTree as ET
-    import logging
-    
-    logger = logging.getLogger(__name__)
-    
     mol = Chem.MolFromSmiles(smiles)
     if mol is None:
         raise ValueError(f"Invalid SMILES: {smiles}")
     
-    # Ensure 2D coordinates
     rdDepictor.Compute2DCoords(mol)
-    
-    # Use RDKit's MolDraw2D API to get direct access to drawing coordinates
     drawer = rdMolDraw2D.MolDraw2DSVG(img_size, img_size)
     drawer.DrawMolecule(mol)
     drawer.FinishDrawing()
-    
-    # Get the SVG
     base_svg = drawer.GetDrawingText()
-    
-    # Get atom positions from the drawer's coordinate system
-    # RDKit's drawer provides atom positions in drawing coordinates after DrawMolecule is called
     atom_positions = {}
-    conf = mol.GetConformer()
-    
-    try:
-        # Get molecule bounds in conformer coordinates
-        xs = [conf.GetAtomPosition(i).x for i in range(mol.GetNumAtoms())]
-        ys = [conf.GetAtomPosition(i).y for i in range(mol.GetNumAtoms())]
-        mol_min_x, mol_max_x = min(xs), max(xs)
-        mol_min_y, mol_max_y = min(ys), max(ys)
-        mol_width = mol_max_x - mol_min_x
-        mol_height = mol_max_y - mol_min_y
-        mol_center_x = (mol_min_x + mol_max_x) / 2
-        mol_center_y = (mol_min_y + mol_max_y) / 2
-        
-        # Viewport center (drawer centers molecule)
-        viewport_center_x = img_size / 2
-        viewport_center_y = img_size / 2
-        
-        # Calculate scale to fit molecule in viewport with padding
-        # RDKit typically adds ~10% padding on each side
-        padding_factor = 0.05
-        available_width = img_size * (1 - 2 * padding_factor)
-        available_height = img_size * (1 - 2 * padding_factor)
-        
-        # Calculate scale to fit molecule (use smaller scale to maintain aspect ratio)
-        scale_x = available_width / mol_width if mol_width > 0 else 1
-        scale_y = available_height / mol_height if mol_height > 0 else 1
-        scale = min(scale_x, scale_y)
-        
-        # Transform conformer coordinates to drawing coordinates
-        for i in range(mol.GetNumAtoms()):
-            if i not in atom_positions:
-                conf_pos = conf.GetAtomPosition(i)
-                # Transform: center molecule, scale, then offset to viewport center
-                dx = conf_pos.x - mol_center_x
-                dy = conf_pos.y - mol_center_y
-                # Y is inverted in drawing coordinates (conformer Y increases up, SVG Y increases down)
-                draw_x = viewport_center_x + dx * scale
-                draw_y = viewport_center_y - dy * scale  # Invert Y
-                atom_positions[i] = (draw_x, draw_y)
-        
-        logger.info(
-            f"[render_molecule_with_overlays] Calculated {len(atom_positions)} atom positions "
-            f"using scale={scale:.3f}, mol_size=({mol_width:.2f}, {mol_height:.2f})"
-        )
-    except Exception as e:
-        logger.warning(f"[render_molecule_with_overlays] Could not calculate positions: {e}", exc_info=True)
-        atom_positions = {}
-    
-    # Verify we have atom positions
-    if not atom_positions or len(atom_positions) < mol.GetNumAtoms():
-        raise ValueError(
-            f"Failed to get atom positions from drawer. Got {len(atom_positions)} positions "
-            f"but molecule has {mol.GetNumAtoms()} atoms."
-        )
-    
-    logger.info(f"[render_molecule_with_overlays] Using {len(atom_positions)} atom positions from drawer")
-    if len(atom_positions) > 0:
-        sample_atom = list(atom_positions.keys())[0]
-        logger.info(
-            f"[render_molecule_with_overlays] Sample atom position: atom {sample_atom} -> "
-            f"({atom_positions[sample_atom][0]:.2f}, {atom_positions[sample_atom][1]:.2f})"
-        )
-    
-    # Parse SVG to add overlays
+    for i in range(mol.GetNumAtoms()):
+        pt = drawer.GetDrawCoords(i)  # RDGeom.Point2D in canvas coords
+        atom_positions[i] = (pt.x, pt.y)
+
     root = ET.fromstring(base_svg)
-    
-    # Find the SVG element
-    svg_ns = {'svg': 'http://www.w3.org/2000/svg'}
     svg_elem = root if root.tag.endswith('svg') else root.find('.//{http://www.w3.org/2000/svg}svg')
     if svg_elem is None:
-        # Try without namespace
         svg_elem = root if root.tag == 'svg' else root.find('.//svg')
     
     if svg_elem is None:
         raise ValueError("Could not find SVG element in generated SVG")
     
-    # Create a group for all overlays
-    # Note: Parent group should NOT be hidden - only individual bit groups are hidden initially
     overlays_group = ET.Element('g', {
         'id': 'bit-overlays'
     })
     
-    # Color palette for different bits
-    colors = [
-        'rgba(16,185,129,0.7)',   # Teal/green
-        'rgba(59,130,246,0.7)',   # Blue
-        'rgba(168,85,247,0.7)',   # Purple
-        'rgba(239,68,68,0.7)',    # Red
-        'rgba(245,158,11,0.7)',   # Orange
-    ]
-    
-    # Add overlay elements for each bit environment
+    color_map = bit_colors or {}
+
     for bit_index, env in bit_environments.items():
         if not env or 'atoms' not in env or 'bonds' not in env:
             continue
         
-        # Get color for this bit (cycle through palette)
-        color = colors[bit_index % len(colors)]
-        fill_color = color.replace('0.7', '0.25')  # More transparent fill
+        colors = color_map.get(bit_index, {})
+        stroke_color = colors.get('stroke', default_color)
+        fill_color = colors.get('fill', default_fill_color)
         
-        # Create group for this bit's overlays
         bit_group = ET.Element('g', {
             'id': f'bit-overlay-{bit_index}',
             'class': 'bit-overlay',
@@ -697,26 +610,12 @@ def render_molecule_with_overlays(
             'style': 'display:none'  # Initially hidden
         })
         
-        # Draw bonds as lines using atom positions from drawer
         if 'bonds' in env and isinstance(env['bonds'], list):
             for bond_idx, (atom1, atom2) in enumerate(env['bonds']):
                 if atom1 not in atom_positions or atom2 not in atom_positions:
-                    logger.warning(
-                        f"[render_molecule_with_overlays] Bit {bit_index} bond {bond_idx}: "
-                        f"Could not find positions for atoms {atom1}, {atom2}"
-                    )
                     continue
-                
-                # Use atom positions directly from drawer
                 pos1 = atom_positions[atom1]
                 pos2 = atom_positions[atom2]
-                
-                logger.debug(
-                    f"[render_molecule_with_overlays] Bit {bit_index} bond {bond_idx}: "
-                    f"atom1={atom1}, atom2={atom2}, using drawer positions "
-                    f"({pos1[0]:.2f}, {pos1[1]:.2f}) -> ({pos2[0]:.2f}, {pos2[1]:.2f})"
-                )
-                
                 line = ET.Element('line', {
                     'id': f'bit-{bit_index}-bond-{bond_idx}',
                     'class': 'bit-bond',
@@ -724,30 +623,17 @@ def render_molecule_with_overlays(
                     'y1': str(pos1[1]),
                     'x2': str(pos2[0]),
                     'y2': str(pos2[1]),
-                    'stroke': color,
+                    'stroke': stroke_color,
                     'stroke-width': '4',
                     'stroke-linecap': 'round'
                 })
                 bit_group.append(line)
         
-        # Draw atoms as circles using atom positions from drawer
         if 'atoms' in env and isinstance(env['atoms'], list):
             for atom_idx, atom_id in enumerate(env['atoms']):
                 if atom_id not in atom_positions:
-                    logger.warning(
-                        f"[render_molecule_with_overlays] Bit {bit_index} atom {atom_idx} (id={atom_id}): "
-                        f"Could not find position"
-                    )
                     continue
-                
-                # Use atom position directly from drawer
                 pos = atom_positions[atom_id]
-                
-                logger.debug(
-                    f"[render_molecule_with_overlays] Bit {bit_index} atom {atom_idx} (id={atom_id}): "
-                    f"using drawer position ({pos[0]:.2f}, {pos[1]:.2f})"
-                )
-                
                 circle = ET.Element('circle', {
                     'id': f'bit-{bit_index}-atom-{atom_idx}',
                     'class': 'bit-atom',
@@ -755,19 +641,66 @@ def render_molecule_with_overlays(
                     'cy': str(pos[1]),
                     'r': '10',
                     'fill': fill_color,
-                    'stroke': color,
+                    'stroke': stroke_color,
                     'stroke-width': '2'
                 })
                 bit_group.append(circle)
         
         overlays_group.append(bit_group)
     
-    # Append overlays group to SVG
     svg_elem.append(overlays_group)
-    
-    # Convert back to string
     ET.register_namespace('', 'http://www.w3.org/2000/svg')
     return ET.tostring(root, encoding='unicode')
+
+
+def render_molecule_with_change_overlays(
+    smiles: str,
+    original_fp: Sequence[float],
+    new_fp: Sequence[float],
+    fp_loader,
+    threshold: float = 0.5,
+    img_size: int = 400
+) -> str:
+    """Render molecule overlays highlighting gained (green) and lost (red) fingerprint bits."""
+
+    if fp_loader is None:
+        raise ValueError("Fingerprint loader is required to render change overlays")
+
+    original_bits = {idx for idx, value in enumerate(original_fp) if value is not None and value > threshold}
+    new_bits = {idx for idx, value in enumerate(new_fp) if value is not None and value > threshold}
+
+    gained_bits = sorted(new_bits - original_bits)
+    lost_bits = sorted(original_bits - new_bits)
+
+    if not gained_bits and not lost_bits:
+        # No changes; return empty overlays
+        return render_molecule_with_overlays(smiles, {}, img_size=img_size)
+
+    target_bits = list({*gained_bits, *lost_bits})
+
+    bit_environments = compute_bit_environments_batch(smiles, target_bits, fp_loader) if target_bits else {}
+
+    gain_color = {
+        'stroke': 'rgba(34,197,94,0.7)',
+        'fill': 'rgba(34,197,94,0.25)'
+    }
+    loss_color = {
+        'stroke': 'rgba(239,68,68,0.7)',
+        'fill': 'rgba(239,68,68,0.25)'
+    }
+
+    bit_colors: Dict[int, Dict[str, str]] = {}
+    for idx in gained_bits:
+        bit_colors[idx] = gain_color
+    for idx in lost_bits:
+        bit_colors[idx] = loss_color
+
+    return render_molecule_with_overlays(
+        smiles,
+        bit_environments,
+        img_size=img_size,
+        bit_colors=bit_colors,
+    )
 
 
 def compute_bit_environments_batch(smiles: str, fp_indices: List[int], fp_loader) -> Dict[int, dict]:

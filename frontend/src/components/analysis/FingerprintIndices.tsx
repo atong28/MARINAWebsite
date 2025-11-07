@@ -15,28 +15,10 @@ function FingerprintIndices({ retrievedIndices, bitEnvironments }: FingerprintIn
     
     if (wasSelected) {
       newSelected.delete(bit)
-      console.log('[FingerprintIndices] Deselecting bit:', bit, {
-        previousSelected: Array.from(selectedBits),
-        newSelectedCount: newSelected.size,
-        newSelectedBits: Array.from(newSelected),
-      })
     } else {
       newSelected.add(bit)
-      console.log('[FingerprintIndices] Selecting bit:', bit, {
-        previousSelected: Array.from(selectedBits),
-        newSelectedCount: newSelected.size,
-        newSelectedBits: Array.from(newSelected),
-        isUnavailable: isUnavailable(bit),
-      })
     }
-    
-    console.log('[FingerprintIndices] Calling setSelectedBits with:', Array.from(newSelected))
     setSelectedBits(newSelected)
-    
-    // Verify the state was updated (this will log on next render)
-    setTimeout(() => {
-      console.log('[FingerprintIndices] State after update - selectedBits:', Array.from(selectedBits))
-    }, 0)
   }
   
   const isUnavailable = (bit: number) => !bitEnvironments[bit]

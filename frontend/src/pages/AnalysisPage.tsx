@@ -303,6 +303,7 @@ function AnalysisPage() {
           <FingerprintIndices
             retrievedIndices={retrievedFpIndices}
             bitEnvironments={bitEnvironments}
+            predictedFp={predictedFp}
           />
         </div>
       </div>

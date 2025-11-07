@@ -4,9 +4,10 @@ import './FingerprintIndices.css'
 interface FingerprintIndicesProps {
   retrievedIndices: number[]
   bitEnvironments: Record<number, any>
+  predictedFp?: number[] | null
 }
 
-function FingerprintIndices({ retrievedIndices, bitEnvironments }: FingerprintIndicesProps) {
+function FingerprintIndices({ retrievedIndices, bitEnvironments, predictedFp }: FingerprintIndicesProps) {
   const { selectedBits, setSelectedBits } = useAnalysisPageStore()
   
   const handleBitClick = (bit: number) => {
@@ -22,6 +23,11 @@ function FingerprintIndices({ retrievedIndices, bitEnvironments }: FingerprintIn
   }
   
   const isUnavailable = (bit: number) => !bitEnvironments[bit]
+  const isOverlap = (bit: number) => {
+    if (!predictedFp || bit < 0 || bit >= predictedFp.length) return false
+    const val = predictedFp[bit]
+    return typeof val === 'number' && val > 0.5
+  }
   const isSelected = (bit: number) => selectedBits.has(bit)
   
   return (
@@ -32,7 +38,7 @@ function FingerprintIndices({ retrievedIndices, bitEnvironments }: FingerprintIn
           {retrievedIndices.map((bit) => (
             <span
               key={`ret-${bit}`}
-              className={`bit-badge ${isSelected(bit) ? 'selected' : ''} ${isUnavailable(bit) ? 'unavailable' : ''}`}
+              className={`bit-badge ${isSelected(bit) ? 'selected' : ''} ${isUnavailable(bit) ? 'unavailable' : ''} ${isOverlap(bit) ? 'overlap' : ''}`}
               onClick={() => !isUnavailable(bit) && handleBitClick(bit)}
               title={isUnavailable(bit) ? 'Bit environment not available' : `Bit ${bit}`}
             >

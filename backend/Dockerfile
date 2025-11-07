@@ -1,6 +1,6 @@
 # Multi-stage Dockerfile for MARINA backend using Pixi
 # Stage 1: Install Pixi and dependencies
-FROM ubuntu:22.04 as pixi-base
+FROM ubuntu:24.04 as pixi-base
 
 # Install system dependencies required for pixi and conda/mamba
 RUN apt-get update && apt-get install -y \

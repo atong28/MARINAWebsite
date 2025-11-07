@@ -10,7 +10,7 @@ services:
       # Mount source code for hot reload (development) - use :rw for write access if needed
       - ./backend/src:/app/src:rw
       # Mount data directory (read-only)
-      - ./data:/app/data:ro
+      - ./backend/data:/app/data:ro
       # Mount logs directory
       - ./logs:/app/logs:rw
     # No port mapping - only accessible internally via nginx

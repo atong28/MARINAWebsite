@@ -26,10 +26,7 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="MARINA API",
     description="Molecular Structure Annotator API",
-    version="2.0.0",
-    docs_url=None,  # Will be set to /api/docs after routers
-    redoc_url=None,  # Will be set to /api/redoc after routers
-    openapi_url=None  # Will be set to /api/openapi.json after routers
+    version="2.0.0"
 )
 
 # Setup middleware
@@ -55,11 +52,6 @@ app.include_router(analyze.router, prefix="/api", tags=["analysis"])
 app.include_router(secondary_retrieval.router, prefix="/api", tags=["retrieval"])
 app.include_router(ablation.router, prefix="/api", tags=["analysis"])
 app.include_router(fingerprints.router, prefix="/api", tags=["fingerprints"])
-
-# Update OpenAPI docs URLs to include /api prefix
-app.openapi_url = "/api/openapi.json"
-app.docs_url = "/api/docs"
-app.redoc_url = "/api/redoc"
 
 # Track server start time
 _server_start_time = time.time()

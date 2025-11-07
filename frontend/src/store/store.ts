@@ -133,7 +133,7 @@ export const useAnalysisPageStore = create<AnalysisPageState>((set) => ({
   setOriginalSpectralData: (data) => set({ originalSpectralData: data }),
   setOriginalPredictedFp: (fp) => set({ originalPredictedFp: fp }),
   setOriginalSimilarityMap: (map) => set({ originalSimilarityMap: map }),
-  setAblationSpectralData: (data) => set((state) => ({ ablationSpectralData: data })),
+  setAblationSpectralData: (data) => set({ ablationSpectralData: data }),
   setAblationPredictedFp: (fp) => set({ ablationPredictedFp: fp }),
   setAblationSimilarityMap: (map) => set({ ablationSimilarityMap: map }),
   setAblationSeedKey: (key) => set({ ablationSeedKey: key }),

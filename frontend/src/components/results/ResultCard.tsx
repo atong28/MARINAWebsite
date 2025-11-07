@@ -60,17 +60,17 @@ function ResultCard({ result, position, onAnalyze, showAnalyzeButton = true }: R
                   className="database-btn npmrd"
                 >
                   View on NPMRD
-                </a>
-              )}
+          </a>
+        )}
             </>
           ) : (
             <span className="local-dataset-note">Local dataset only</span>
           )}
         </div>
         {showAnalyzeButton && (
-          <button onClick={onAnalyze} className="analyze-btn">
-            Analyze
-          </button>
+        <button onClick={onAnalyze} className="analyze-btn">
+          Analyze
+        </button>
         )}
       </div>
     </div>

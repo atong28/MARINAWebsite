@@ -161,7 +161,7 @@ function AnalysisPage() {
   // Removed automatic fetch of originalSimilarityMap on page load
   // This was causing 422 errors because the data might not be sanitized yet
   // The original similarity map will be fetched on-demand when needed (e.g., when ablation results are shown)
-
+  
   useEffect(() => {
     if (result) {
       // Create a unique key for this result to track if we've processed it

@@ -17,11 +17,11 @@ ENV PATH="/root/.pixi/bin:$PATH"
 WORKDIR /app
 
 # Copy pixi configuration files
-COPY pixi.toml pixi.lock ./
+COPY pixi.toml ./
 
 # Install dependencies using pixi
 # This creates the conda environment with all dependencies
-RUN pixi install --frozen
+RUN pixi install
 
 # Stage 2: Application code
 FROM pixi-base

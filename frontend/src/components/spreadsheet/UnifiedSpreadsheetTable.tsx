@@ -233,7 +233,7 @@ function UnifiedSpreadsheetTable({
     if (!changes || source === 'loadData' || !hotTableRef.current?.hotInstance) {
       return
     }
-    
+
     const currentData = hotTableRef.current.hotInstance.getData() as (number | string)[][]
     extractAndEmit(currentData)
   }, [extractAndEmit])
@@ -323,20 +323,20 @@ function UnifiedSpreadsheetTable({
         </div>
         <button onClick={handleCondense} style={{ padding: '6px 10px' }}>Condense rows</button>
       </div>
-      <HotTable
-        ref={hotTableRef}
-        data={tableData}
-        columns={columnDefs}
-        colHeaders={columns}
-        rowHeaders={true}
-        height={calculatedHeight}
-        width={calculatedWidth}
-        afterChange={handleAfterChange}
-        licenseKey="non-commercial-and-evaluation"
-        themeName="ht-theme-main"
+    <HotTable
+      ref={hotTableRef}
+      data={tableData}
+      columns={columnDefs}
+      colHeaders={columns}
+      rowHeaders={true}
+      height={calculatedHeight}
+      width={calculatedWidth}
+      afterChange={handleAfterChange}
+      licenseKey="non-commercial-and-evaluation"
+      themeName="ht-theme-main"
         copyPaste={{ pasteMode: 'overwrite' } as any}
         fillHandle={false}
-      />
+    />
     </div>
   )
 }

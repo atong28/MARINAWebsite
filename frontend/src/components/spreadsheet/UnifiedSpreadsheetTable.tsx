@@ -2,7 +2,8 @@
  * Unified spreadsheet table component for all spectral input types.
  * Combines HSQC, H NMR, C NMR, and Mass Spec into one spreadsheet with separate columns.
  */
-import { useMemo, useCallback, useRef, useState } from 'react'
+import { useMemo, useCallback, useRef, useState, useEffect } from 'react'
+
 import { HotTable, type HotTableRef } from '@handsontable/react-wrapper'
 import { registerAllModules } from 'handsontable/registry'
 import 'handsontable/styles/handsontable.min.css';
@@ -36,6 +37,13 @@ function UnifiedSpreadsheetTable({
 }: UnifiedSpreadsheetTableProps) {
   const hotTableRef = useRef<HotTableRef>(null)
   const [validationSummary, setValidationSummary] = useState<{ hsqcInvalid: number; hInvalid: number; cInvalid: number; msInvalid: number }>({ hsqcInvalid: 0, hInvalid: 0, cInvalid: 0, msInvalid: 0 })
+  
+  // Track when we're doing an internal update (from our own extractAndEmit)
+  // This prevents the feedback loop where our update triggers a re-render which reloads Handsontable
+  const isInternalUpdateRef = useRef(false)
+  
+  // Track the last data we sent to Handsontable to detect external changes
+  const lastSyncedDataRef = useRef<(number | string)[][] | null>(null)
 
   // Column definitions: HSQC (3), H NMR (1), C NMR (1), Mass Spec (2) = 7 total
   const columns = useMemo(() => [
@@ -51,8 +59,19 @@ function UnifiedSpreadsheetTable({
   // Fixed maximum rows: 400 rows with scrolling, always show 10 rows
   const maxRows = 400
 
+  // Track previous props to detect changes
+  const prevPropsRef = useRef<{ hsqc: number[]; h_nmr: number[]; c_nmr: number[]; mass_spec: number[] }>({
+    hsqc: [],
+    h_nmr: [],
+    c_nmr: [],
+    mass_spec: [],
+  })
+
   // Convert all data types to 2D array format - always 400 rows
   const tableData = useMemo(() => {
+    // Update prev props
+    prevPropsRef.current = { hsqc, h_nmr, c_nmr, mass_spec }
+
     const result: (number | string)[][] = []
 
     const getNum = (arr: number[], idx: number): number | '' => {
@@ -114,6 +133,7 @@ function UnifiedSpreadsheetTable({
   // Fixed height for 10 visible rows with scrolling
   const calculatedHeight = 30 + (10 * 24) // header (30px) + 10 rows (24px each) = 270px
 
+
   // Helpers: row validation per data type
   const parseNumber = (val: any): number | null => {
     if (val === '' || val === null || val === undefined) return null
@@ -148,6 +168,12 @@ function UnifiedSpreadsheetTable({
     }
 
     const currentData = gridData
+    
+    // Mark that we're doing an internal update to prevent feedback loop
+    isInternalUpdateRef.current = true
+    
+    // Update the last synced data to match what's in Handsontable
+    lastSyncedDataRef.current = currentData.map(row => [...row])
 
     // Position-preserving emission: fixed-size arrays using NaN for blanks
     const hsqcData: number[] = new Array(maxRows * 3).fill(NaN)
@@ -188,11 +214,17 @@ function UnifiedSpreadsheetTable({
     if (typeof onValidationChange === 'function') {
       onValidationChange({ hsqcInvalid, hInvalid, cInvalid, msInvalid, anyInvalid: (hsqcInvalid + hInvalid + cInvalid + msInvalid) > 0 })
     }
-    // Emit changes to store - this will trigger re-renders but that's expected
+    
+    // Emit changes to store - this will trigger re-renders
     onHSQCChange(hsqcData)
     onHNMRChange(hNmrData)
     onCNMRChange(cNmrData)
     onMassSpecChange(massSpecData)
+    
+    // Clear the internal update flag in the next tick to allow re-render cycle to complete
+    setTimeout(() => {
+      isInternalUpdateRef.current = false
+    }, 0)
   }, [maxRows, onHSQCChange, onHNMRChange, onCNMRChange, onMassSpecChange, onValidationChange])
 
   // Convert 2D array back to separate data arrays on changes
@@ -201,9 +233,37 @@ function UnifiedSpreadsheetTable({
     if (!changes || source === 'loadData' || !hotTableRef.current?.hotInstance) {
       return
     }
+    
     const currentData = hotTableRef.current.hotInstance.getData() as (number | string)[][]
     extractAndEmit(currentData)
   }, [extractAndEmit])
+
+  // Sync Handsontable data when props change externally (not from our own update)
+  useEffect(() => {
+    // Skip if we're in the middle of an internal update (our own extractAndEmit call)
+    if (isInternalUpdateRef.current) {
+      return
+    }
+    
+    // Skip if Handsontable isn't ready
+    if (!hotTableRef.current?.hotInstance) {
+      return
+    }
+    
+    const hot = hotTableRef.current.hotInstance
+    
+    // Compare current tableData with what we last synced
+    // Only update if they're different (external change)
+    const dataChanged = lastSyncedDataRef.current === null || 
+      JSON.stringify(tableData) !== JSON.stringify(lastSyncedDataRef.current)
+    
+    if (dataChanged) {
+      // Update Handsontable with the new data from props
+      hot.loadData(tableData)
+      // Update our tracking ref
+      lastSyncedDataRef.current = tableData.map(row => [...row])
+    }
+  }, [tableData])
 
   const handleCondense = useCallback(() => {
     if (!hotTableRef.current?.hotInstance) return
@@ -243,17 +303,16 @@ function UnifiedSpreadsheetTable({
     condenseSegment([3])     // H NMR
     condenseSegment([4])     // C NMR
     condenseSegment([5,6])   // Mass Spec
-
-    console.log('[UnifiedSpreadsheetTable] Condensing rows, updating store with condensed data')
     
-    // IMPORTANT: Update the store FIRST before updating the table
-    // This ensures the store has the condensed state, so when the component re-renders,
-    // tableData will match what we're about to load into Handsontable
+    // For condense, we explicitly want to update both store and table
+    // Mark as internal update to prevent the useEffect from interfering
+    isInternalUpdateRef.current = true
     extractAndEmit(newData)
-    
-    // Then update the table with condensed data
-    // loadData will trigger afterChange with source='loadData', which we ignore
     hot.loadData(newData)
+    lastSyncedDataRef.current = newData.map(row => [...row])
+    setTimeout(() => {
+      isInternalUpdateRef.current = false
+    }, 0)
   }, [extractAndEmit])
 
   return (

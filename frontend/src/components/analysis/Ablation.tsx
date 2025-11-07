@@ -1,4 +1,4 @@
-import { useMemo, useCallback, useState } from 'react'
+import { useMemo, useCallback, useState, useRef, useEffect } from 'react'
 import UnifiedSpreadsheetTable from '../spreadsheet/UnifiedSpreadsheetTable'
 import { useAnalysisPageStore } from '../../store/store'
 import { useAblation } from '../../services/api'
@@ -7,12 +7,27 @@ import BitComparison from './BitComparison'
 import MoleculeOverlay from './MoleculeOverlay'
 import './Ablation.css'
 
+// Import type from store
+type SpectralDataSnapshot = {
+  hsqc: number[]
+  h_nmr: number[]
+  c_nmr: number[]
+  mass_spec: number[]
+  mw: number | null
+}
+
 const DEFAULT_THRESHOLD = 0.5
+
+// Helper function to filter out NaN, null, undefined, and non-finite values
+function filterNaNValues(arr: number[]): number[] {
+  return arr.filter((val) => {
+    return val !== null && val !== undefined && !Number.isNaN(val) && isFinite(val)
+  })
+}
 
 function Ablation() {
   const {
     selectedMolecule,
-    ablationSpectralData,
     setAblationSpectralData,
     ablationPredictedFp,
     setAblationPredictedFp,
@@ -23,8 +38,19 @@ function Ablation() {
     originalSpectralData,
   } = useAnalysisPageStore()
 
+  // Ensure we always use the latest store state for props
+  // Using a selector ensures we always get the latest state and component re-renders on changes
+  const propsToUse = useAnalysisPageStore((state) => state.ablationSpectralData)
+
   const [changeOverlaySvg, setChangeOverlaySvg] = useState<string | null>(null)
+  const [validationSummary, setValidationSummary] = useState<{ anyInvalid: boolean }>({ anyInvalid: false })
   const hasResults = Boolean(ablationPredictedFp)
+  
+  // Use a ref to track the latest propsToUse to avoid stale closures
+  const ablationSpectralDataRef = useRef(propsToUse)
+  useEffect(() => {
+    ablationSpectralDataRef.current = propsToUse
+  }, [propsToUse])
 
   const ablationMutation = useAblation({
     onSuccess: (data) => {
@@ -35,13 +61,22 @@ function Ablation() {
   })
 
   const handleSpectralUpdate = useCallback(
-    (partial: Partial<typeof ablationSpectralData>) => {
-      setAblationSpectralData({
-        ...ablationSpectralData,
+    (partial: Partial<SpectralDataSnapshot>) => {
+      // Read the absolute latest store state right before updating to avoid race conditions
+      const absoluteLatestStoreState = useAnalysisPageStore.getState().ablationSpectralData
+      
+      // Merge with absolute latest store state to ensure we don't lose any concurrent updates
+      const newState = {
+        ...absoluteLatestStoreState,
         ...partial,
-      })
+      }
+      
+      setAblationSpectralData(newState)
+      
+      // Update the ref immediately so next callback has latest state
+      ablationSpectralDataRef.current = newState
     },
-    [ablationSpectralData, setAblationSpectralData]
+    [setAblationSpectralData]
   )
 
   const handleResetToOriginal = () => {
@@ -55,14 +90,24 @@ function Ablation() {
   const handleRunAblation = () => {
     if (!selectedMolecule) return
 
+    // Sanitize arrays by filtering out NaN, null, undefined, and non-finite values
+    const sanitizedHSQC = filterNaNValues(propsToUse.hsqc)
+    const sanitizedHNMR = filterNaNValues(propsToUse.h_nmr)
+    const sanitizedCNMR = filterNaNValues(propsToUse.c_nmr)
+    const sanitizedMassSpec = filterNaNValues(propsToUse.mass_spec)
+
+    // Build request payload - only include arrays with at least one valid value
+    const raw: any = {}
+    if (sanitizedHSQC.length > 0) raw.hsqc = sanitizedHSQC
+    if (sanitizedHNMR.length > 0) raw.h_nmr = sanitizedHNMR
+    if (sanitizedCNMR.length > 0) raw.c_nmr = sanitizedCNMR
+    if (sanitizedMassSpec.length > 0) raw.mass_spec = sanitizedMassSpec
+    if (propsToUse.mw !== null && propsToUse.mw !== undefined && !Number.isNaN(propsToUse.mw) && isFinite(propsToUse.mw)) {
+      raw.mw = propsToUse.mw
+    }
+
     const payload = {
-      raw: {
-        hsqc: ablationSpectralData.hsqc.length > 0 ? ablationSpectralData.hsqc : undefined,
-        h_nmr: ablationSpectralData.h_nmr.length > 0 ? ablationSpectralData.h_nmr : undefined,
-        c_nmr: ablationSpectralData.c_nmr.length > 0 ? ablationSpectralData.c_nmr : undefined,
-        mass_spec: ablationSpectralData.mass_spec.length > 0 ? ablationSpectralData.mass_spec : undefined,
-        mw: ablationSpectralData.mw ?? undefined,
-      },
+      raw,
       smiles: selectedMolecule.smiles,
       bit_threshold: DEFAULT_THRESHOLD,
       reference_fp: originalPredictedFp ?? undefined,
@@ -127,7 +172,7 @@ function Ablation() {
     return new Set<number>([...bitDiff.gained, ...bitDiff.lost])
   }, [hasResults, bitDiff.gained, bitDiff.lost])
 
-  const mwDisplay = ablationSpectralData.mw ?? ''
+  const mwDisplay = propsToUse.mw ?? ''
 
   return (
     <section className="ablation-section">
@@ -144,26 +189,20 @@ function Ablation() {
           >
             Reset to Original Inputs
           </button>
-          <button
-            type="button"
-            onClick={handleRunAblation}
-            disabled={!selectedMolecule || ablationMutation.isPending}
-          >
-            {ablationMutation.isPending ? 'Running…' : 'Run Prediction'}
-          </button>
         </div>
       </div>
 
       <div className="ablation-inputs">
         <UnifiedSpreadsheetTable
-          hsqc={ablationSpectralData.hsqc}
-          h_nmr={ablationSpectralData.h_nmr}
-          c_nmr={ablationSpectralData.c_nmr}
-          mass_spec={ablationSpectralData.mass_spec}
+          hsqc={propsToUse.hsqc}
+          h_nmr={propsToUse.h_nmr}
+          c_nmr={propsToUse.c_nmr}
+          mass_spec={propsToUse.mass_spec}
           onHSQCChange={(data) => handleSpectralUpdate({ hsqc: data })}
           onHNMRChange={(data) => handleSpectralUpdate({ h_nmr: data })}
           onCNMRChange={(data) => handleSpectralUpdate({ c_nmr: data })}
           onMassSpecChange={(data) => handleSpectralUpdate({ mass_spec: data })}
+          onValidationChange={(summary) => setValidationSummary({ anyInvalid: summary.anyInvalid })}
         />
         <div className="ablation-mw-input">
           <label>
@@ -180,6 +219,19 @@ function Ablation() {
             />
           </label>
         </div>
+      </div>
+
+      <div className="ablation-predict-section">
+        {validationSummary.anyInvalid && (
+          <div className="validation-warning">Incomplete data</div>
+        )}
+        <button
+          type="button"
+          onClick={handleRunAblation}
+          disabled={!selectedMolecule || ablationMutation.isPending || validationSummary.anyInvalid}
+        >
+          {ablationMutation.isPending ? 'Running…' : 'Run Prediction'}
+        </button>
       </div>
 
       {ablationMutation.isError && (

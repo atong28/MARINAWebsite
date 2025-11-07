@@ -1,12 +1,22 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAnalysisPageStore, useMainPageStore } from '../store/store'
-import { useAnalyze } from '../services/api'
+import { useAnalyze, api } from '../services/api'
+
 import FingerprintIndices from '../components/analysis/FingerprintIndices'
 import MoleculeOverlay from '../components/analysis/MoleculeOverlay'
 import SecondaryRetrieval from '../components/analysis/SecondaryRetrieval'
 import Ablation from '../components/analysis/Ablation'
 import './AnalysisPage.css'
+
+const DEFAULT_THRESHOLD = 0.5
+
+// Helper function to filter out NaN, null, undefined, and non-finite values
+function filterNaNValues(arr: number[]): number[] {
+  return arr.filter((val) => {
+    return val !== null && val !== undefined && !Number.isNaN(val) && isFinite(val)
+  })
+}
 
 function AnalysisPage() {
   const navigate = useNavigate()
@@ -72,7 +82,7 @@ function AnalysisPage() {
     if (ablationSeedKey === seedKey) {
       return
     }
-
+    
     // Initialize ablation data only when a new molecule is selected
     // Use the current values from the main page store at the time of selection
     const snapshot = {
@@ -90,6 +100,50 @@ function AnalysisPage() {
     setAblationPredictedFp(null)
     setAblationSimilarityMap(null)
     setAblationSeedKey(seedKey)
+
+    // Fetch original similarity map by calling /ablation endpoint with original data
+    const fetchOriginalSimilarityMap = async () => {
+      try {
+        // Sanitize original spectral data before sending
+        const sanitizedHSQC = filterNaNValues(snapshot.hsqc)
+        const sanitizedHNMR = filterNaNValues(snapshot.h_nmr)
+        const sanitizedCNMR = filterNaNValues(snapshot.c_nmr)
+        const sanitizedMassSpec = filterNaNValues(snapshot.mass_spec)
+
+        // Build request payload - only include arrays with at least one valid value
+        const raw: any = {}
+        if (sanitizedHSQC.length > 0) raw.hsqc = sanitizedHSQC
+        if (sanitizedHNMR.length > 0) raw.h_nmr = sanitizedHNMR
+        if (sanitizedCNMR.length > 0) raw.c_nmr = sanitizedCNMR
+        if (sanitizedMassSpec.length > 0) raw.mass_spec = sanitizedMassSpec
+        if (snapshot.mw !== null && snapshot.mw !== undefined && !Number.isNaN(snapshot.mw) && isFinite(snapshot.mw)) {
+          raw.mw = snapshot.mw
+        }
+
+        // Only proceed if we have at least one valid spectral data field
+        if (Object.keys(raw).length === 0) {
+          console.warn('[AnalysisPage] No valid spectral data to fetch original similarity map')
+          return
+        }
+
+        const payload = {
+          raw,
+          smiles: selectedMolecule.smiles,
+          bit_threshold: DEFAULT_THRESHOLD,
+          reference_fp: predictedFp ? Array.from(predictedFp) : undefined,
+        }
+
+        const response = await api.ablation(payload)
+        if (response.similarity_map) {
+          setOriginalSimilarityMap(response.similarity_map)
+        }
+      } catch (error) {
+        // Handle errors gracefully - log but don't block the UI
+        console.error('[AnalysisPage] Failed to fetch original similarity map:', error)
+      }
+    }
+
+    fetchOriginalSimilarityMap()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedMolecule,

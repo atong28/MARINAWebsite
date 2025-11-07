@@ -26,7 +26,17 @@ limiter = get_limiter()
 @router.post("/predict", response_model=PredictResponse, status_code=status.HTTP_200_OK)
 @limiter.limit("30 per minute")
 async def predict(request: Request, data: PredictRequest):
-    """Predict molecular structures from spectral data."""
+    """
+    Predict molecular structures from spectral data.
+    The request body is a JSON object with the following fields:
+    - k: The number of predictions to return
+    - raw: A JSON object with the following fields:
+      - hsqc: A list of floats in a flattened 1d list: [delta H, delta C, intensity, delta H, delta C, intensity, ...]
+      - h_nmr: A list of floats of H chemical shifts
+      - c_nmr: A list of floats of C chemical shifts
+      - mass_spec: A list of floats in a flattened 1d list: [m/z, intensity, m/z, intensity, ...]
+      - mw: A float representing the molecular weight
+    """
     # Check if model is ready
     model_service = ModelService.instance()
     if not model_service.is_ready():

@@ -74,29 +74,11 @@ function MainPage() {
   }
   
   const handlePredict = () => {
-    // Log raw data from store (with NaN values)
-    console.log('[MainPage] Raw data from store:', {
-      hsqc: { length: hsqc.length, sample: hsqc.slice(0, 10) },
-      h_nmr: { length: h_nmr.length, sample: h_nmr.slice(0, 10) },
-      c_nmr: { length: c_nmr.length, sample: c_nmr.slice(0, 10) },
-      mass_spec: { length: mass_spec.length, sample: mass_spec.slice(0, 10) },
-      mw,
-    })
-    
     // Sanitize arrays by filtering out NaN values
     const sanitizedHSQC = filterNaNValues(hsqc)
     const sanitizedHNMR = filterNaNValues(h_nmr)
     const sanitizedCNMR = filterNaNValues(c_nmr)
     const sanitizedMassSpec = filterNaNValues(mass_spec)
-    
-    // Log sanitized data
-    console.log('[MainPage] Sanitized data (NaN filtered):', {
-      hsqc: { length: sanitizedHSQC.length, sample: sanitizedHSQC.slice(0, 10) },
-      h_nmr: { length: sanitizedHNMR.length, sample: sanitizedHNMR.slice(0, 10) },
-      c_nmr: { length: sanitizedCNMR.length, sample: sanitizedCNMR.slice(0, 10) },
-      mass_spec: { length: sanitizedMassSpec.length, sample: sanitizedMassSpec.slice(0, 10) },
-      mw,
-    })
     
     // Build request payload - only include arrays with at least one valid value
     const raw: any = {}
@@ -109,19 +91,6 @@ function MainPage() {
     }
     
     const payload = { raw, k }
-    
-    // Log full request payload
-    console.log('[MainPage] Sending predict request:', {
-      ...payload,
-      raw: {
-        ...raw,
-        hsqc: raw.hsqc ? { length: raw.hsqc.length, first10: raw.hsqc.slice(0, 10) } : undefined,
-        h_nmr: raw.h_nmr ? { length: raw.h_nmr.length, first10: raw.h_nmr.slice(0, 10) } : undefined,
-        c_nmr: raw.c_nmr ? { length: raw.c_nmr.length, first10: raw.c_nmr.slice(0, 10) } : undefined,
-        mass_spec: raw.mass_spec ? { length: raw.mass_spec.length, first10: raw.mass_spec.slice(0, 10) } : undefined,
-      },
-    })
-    
     predictMutation.mutate(payload)
   }
   

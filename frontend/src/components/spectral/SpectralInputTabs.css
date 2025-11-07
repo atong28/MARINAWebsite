@@ -1,0 +1,89 @@
+.spectral-input-tabs {
+  border: 1px solid #ddd;
+  border-radius: 8px;
+  padding: 20px;
+  background: white;
+}
+
+.unified-input-header {
+  margin-bottom: 20px;
+}
+
+.unified-input-header h3 {
+  margin: 0 0 10px 0;
+  color: #333;
+}
+
+.unified-input-header p {
+  margin: 0 0 10px 0;
+  color: #666;
+}
+
+.unified-input-header ul {
+  margin: 10px 0;
+  padding-left: 20px;
+  color: #666;
+}
+
+.unified-input-header li {
+  margin: 5px 0;
+}
+
+.tab-buttons {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+  border-bottom: 1px solid #ddd;
+}
+
+.tab-buttons button {
+  padding: 10px 20px;
+  border: none;
+  background: transparent;
+  cursor: pointer;
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+}
+
+.tab-buttons button.active {
+  border-bottom-color: #007bff;
+  color: #007bff;
+}
+
+.tab-content {
+  min-height: 200px;
+  position: relative;
+  clear: both;
+  overflow: visible;
+  margin-bottom: 20px;
+  width: fit-content;
+}
+
+/* Ensure each input component has proper spacing */
+.tab-content > div {
+  position: relative;
+  width: fit-content;
+  margin-bottom: 10px;
+}
+
+
+.mw-input {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #ddd;
+}
+
+.mw-input label {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mw-input input {
+  flex: 1;
+  max-width: 200px;
+  padding: 8px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+

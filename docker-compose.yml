@@ -1,28 +1,74 @@
-version: '3'
+version: '3.8'
+
 services:
-  marina-predictor:
+  backend:
     build:
-      context: .
+      context: ./backend
       dockerfile: Dockerfile
-    container_name: marina-predictor
+    container_name: marina-backend
     volumes:
-      - ./logs:/app/logs:rw
+      # Mount source code for hot reload (development) - use :rw for write access if needed
+      - ./backend/src:/app/src:rw
+      # Mount data directory (read-only)
       - ./data:/app/data:ro
+      # Mount logs directory
+      - ./logs:/app/logs:rw
     ports:
-      - "${PORT:-5000}:${PORT:-5000}"
-    networks:
-      - default
-      - nginx-net
-    restart: unless-stopped
+      - "${BACKEND_PORT:-5000}:5000"
     environment:
-      PORT: ${PORT:-5000}
-      DATA_DIR: /app/data
-      PYTHONUNBUFFERED: "1"
-      HIGHLIGHT_DEBUG: "true"
+      # Server configuration
+      - PORT=${BACKEND_PORT:-5000}
+      - HOST=${BACKEND_HOST:-0.0.0.0}
+      # Data configuration
+      - DATA_DIR=/app/data
+      - METADATA_PATH=/app/data/metadata.json
+      # Debugging
+      - PYTHONUNBUFFERED=1
+      - HIGHLIGHT_DEBUG=${HIGHLIGHT_DEBUG:-false}
+      - RDKIT_ENABLED=${RDKIT_ENABLED:-true}
+      # Model configuration
+      - MOLECULE_IMG_SIZE=${MOLECULE_IMG_SIZE:-400}
+      - DEFAULT_TOP_K=${DEFAULT_TOP_K:-10}
+      - MAX_TOP_K=${MAX_TOP_K:-50}
+    networks:
+      - marina-net
+    restart: unless-stopped
+    healthcheck:
+      # Health check uses internal container port (5000), not mapped port
+      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
 
-
+  frontend:
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    container_name: marina-frontend
+    volumes:
+      # For production: static files are built into image
+      # For development: uncomment below and use dev Dockerfile variant
+      - ./frontend/src:/app/src:rw
+      - ./frontend/public:/app/public:ro
+      - ./frontend/index.html:/app/index.html:ro
+      - ./frontend/vite.config.ts:/app/vite.config.ts:ro
+      - ./frontend/tsconfig.json:/app/tsconfig.json:ro
+      - ./frontend/package.json:/app/package.json:ro
+    ports:
+      - "${FRONTEND_PORT:-3000}:80"
+    environment:
+      # VITE_API_BASE is constructed from BACKEND_PORT if not explicitly set
+      - VITE_API_BASE=${VITE_API_BASE:-http://host.docker.internal:${BACKEND_PORT:-5000}}
+    depends_on:
+      backend:
+        condition: service_healthy
+    networks:
+      - marina-net
+    restart: unless-stopped
+    # For development with hot reload, use a dev Dockerfile that runs: npm run dev -- --host 0.0.0.0
 
 networks:
-  nginx-net:
-    external:
-      name: nginx-net
+  marina-net:
+    driver: bridge
+

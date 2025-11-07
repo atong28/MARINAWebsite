@@ -1,0 +1,39 @@
+.status-indicator {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.status-indicator .fa-circle {
+  font-size: 0.8em;
+}
+
+.status-ok {
+  color: #28a745;
+}
+
+.status-loading,
+.status-initializing {
+  color: #ffc107;
+  animation: pulse 2s infinite;
+}
+
+.status-error {
+  color: #dc3545;
+}
+
+@keyframes pulse {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.5;
+  }
+}
+
+.status-text {
+  font-size: 0.9em;
+  color: #666;
+}
+

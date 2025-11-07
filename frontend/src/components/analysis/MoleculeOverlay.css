@@ -1,0 +1,25 @@
+.molecule-overlay-container {
+  position: relative;
+  width: 100%;
+  min-height: 300px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.molecule-image {
+  max-width: 100%;
+  height: auto;
+}
+
+.molecule-svg {
+  width: 100%;
+  height: auto;
+}
+
+.molecule-placeholder {
+  padding: 40px;
+  text-align: center;
+  color: #666;
+}
+

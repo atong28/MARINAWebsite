@@ -1,0 +1,31 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "marina-backend"
+version = "2.0.0"
+description = "MARINA Backend API"
+requires-python = ">=3.11"
+dependencies = [
+    "fastapi>=0.104.0",
+    "uvicorn[standard]>=0.24.0",
+    "slowapi>=0.1.9",
+    "pydantic>=2.0.0",
+    "python-multipart>=0.0.6",
+    "rdkit-pypi>=2023.3.1",
+    "torch>=2.0.0",
+    "numpy>=1.24.0",
+    "pandas>=2.0.0",
+    "plotly>=5.17.0",
+    "Pillow>=10.0.0",
+    "lmdb>=1.4.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.0",
+    "pytest-asyncio>=0.21.0",
+    "httpx>=0.25.0",
+]
+

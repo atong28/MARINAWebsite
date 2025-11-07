@@ -1,198 +1,320 @@
-# MARINA: Molecular Structure Annotator
+# MARINA TypeScript Rebuild
 
-A deep learning system for predicting molecular structures from spectral data using PyTorch Lightning and modern web technologies.
+This is the rebuilt version of MARINA using TypeScript, FastAPI, and React with modern design principles.
 
-## Overview
+## Structure
 
-MARINA (Multimodal Annotation and Retrieval for Identification of NAtural products) is a machine learning model that predicts molecular structures from various types of spectral data including:
+```
+├── backend/          # FastAPI backend (Python)
+│   ├── src/         # Source code
+│   ├── tests/       # Test files
+│   ├── pixi.toml    # Pixi environment configuration
+│   └── requirements.txt  # Python dependencies (for Docker)
+├── frontend/         # React + TypeScript frontend
+│   ├── src/         # Source code
+│   └── package.json # Node dependencies
+├── shared/           # Shared types and schemas
+└── docker-compose.yml
+```
 
-- **HSQC NMR**: 2D heteronuclear single quantum coherence spectroscopy
-- **H NMR**: Proton nuclear magnetic resonance
-- **C NMR**: Carbon-13 nuclear magnetic resonance  
-- **Mass Spectrometry**: Mass-to-charge ratio and intensity data
-- **Molecular Weight**: Molecular mass information
-
-The system uses a transformer-based architecture with cross-attention mechanisms to process multi-modal spectral inputs and predict molecular fingerprints for structure retrieval.
-
-## Features
-
-### Modern Web Interface
-- **Tabbed Input Interface**: Separate tabs for each spectral data type
-- **Editable Tables**: Dynamic tables for entering spectral peaks with validation
-- **Clipboard Support**: Paste data directly from spreadsheets (CSV/TSV)
-- **Real-time Validation**: Input validation with helpful error messages
-- **Responsive Design**: Works on desktop and mobile devices
-
-### Data Input Formats
-- **HSQC NMR**: <sup>13</sup>C shift, <sup>1</sup>H shift, and intensity values (3 columns)
-- **H NMR**: <sup>1</sup>H chemical shift values (1 column)
-- **C NMR**: <sup>13</sup>C chemical shift values (1 column)
-- **Mass Spec**: m/z and intensity pairs (2 columns)
-- **Molecular Weight**: Single scalar value in g/mol
-
-### Prediction Results
-- **Top-K Retrieval**: Configurable number of similar structures (5-50)
-- **Similarity Scoring**: Tanimoto similarity between predicted and retrieved fingerprints
-- **PubChem Integration**: Direct links to view structures on PubChem
-- **SMILES Display**: Chemical structure notation for each result
-
-## Quick Start
+## Development Setup
 
 ### Prerequisites
 
-- Docker and Docker Compose
-- At least 4GB RAM available
-- Model checkpoint files in `data/` directory:
-  - `best.ckpt`: PyTorch Lightning model checkpoint (~2GB)
-  - `count_hashes_under_radius_10.pkl`: Dataset count for entropy fp generation
-  - `params.json`: Model configuration parameters
-  - `rankingset.pt`: Sparse tensor with molecular fingerprints
-  - `rankingset_meta.pkl`: Metadata mapping indices to SMILES strings
-  - `index.pkl`: Dataset index mapping (if using index-based prediction)
+- Docker and Docker Compose (for containerized development)
+- Node.js 20+ (for local frontend development)
+- Python 3.11+ (for local backend development)
+- Pixi (recommended for backend dependency management): `curl -fsSL https://pixi.sh/install.sh | bash`
 
-### Using Docker (Recommended)
+### Initial Setup
 
-1. **Build the Docker image:**
+1. **Create environment file (Single Source of Truth for Ports):**
    ```bash
-   docker build -t marina-predictor:latest .
+   cp .env.example .env
+   # Edit .env to customize ports if needed (defaults: BACKEND_PORT=5000, FRONTEND_PORT=3000)
    ```
+   
+   This `.env` file at the project root is the **single source of truth** for all port configuration:
+   - `BACKEND_PORT`: Used by Docker Compose, Pixi tasks, and backend config
+   - `FRONTEND_PORT`: Used by Vite dev server and Docker Compose
+   - `VITE_API_BASE`: Used by frontend to connect to backend
+   
+   All components automatically read from this file - no need to configure ports in multiple places!
 
-2. **Run with Docker Compose:**
+### Backend Development
+
+1. **With Pixi (recommended for local development):**
    ```bash
-   PORT=[PORT] docker-compose up -d
+   # Set up environment (create .env from .env.example if needed)
+   cd backend
+   pixi install          # Install dependencies
+   pixi run dev          # Start with hot reload (uses BACKEND_PORT from .env)
    ```
+   The backend will be available at `http://localhost:${BACKEND_PORT:-5000}`
+   - Uses Pixi for reproducible environment
+   - All dependencies (PyTorch, RDKit, etc.) are managed by Pixi
+   - Hot reload enabled automatically
+   - Port configured via `BACKEND_PORT` in root `.env` file
 
-3. **Quick restart with logs (recommended):**
+2. **With Docker (for containerized development):**
    ```bash
-   ./restart.sh
+   # Ensure .env file exists at project root
+   docker-compose up backend
    ```
+   The backend will be available at `http://localhost:${BACKEND_PORT:-5000}`
+   - Source code is mounted for hot reload
+   - PyTorch and RDKit are pre-installed in the image
+   - Port configured via `BACKEND_PORT` in root `.env` file
 
-4. **Access the web interface:**
-   Open your browser to `http://localhost:[PORT]`
-
-### Logs
-
-Runtime logs are written to the `logs/` directory in the project root (mounted into the container):
-
-- `logs/app.log`: application logs (warnings and errors)
-- `logs/gunicorn.access.log`: HTTP access logs
-- `logs/gunicorn.error.log`: Gunicorn errors
-
-Logs rotate automatically (app log ~2MB x 5 backups). Ensure the `logs/` directory exists or is mounted (already configured in `docker-compose.yml`).
-
-### Using Pixi Package Manager
-
-1. **Install Pixi:**
+3. **With pip (fallback):**
    ```bash
-   curl -fsSL https://pixi.sh/install.sh | bash
-   ```
-
-2. **Install dependencies:**
-   ```bash
-   pixi install
-   ```
-
-3. **Run the server:**
-   ```bash
-   pixi run gunicorn -w 1 -b 0.0.0.0:5000 app:app
-   ```
-
-### Using pip
-
-1. **Install dependencies:**
-   ```bash
+   cd backend
    pip install -r requirements.txt
+   # Port is read from BACKEND_PORT env var or defaults to 5000
+   uvicorn src.api.app:app --reload --host ${BACKEND_HOST:-0.0.0.0} --port ${BACKEND_PORT:-5000}
    ```
 
-2. **Run the server:**
+### Frontend Development
+
+1. **With Docker:**
    ```bash
-   gunicorn -w 1 -b 0.0.0.0:5000 app:app
+   # Ensure .env file exists at project root
+   docker-compose up frontend
    ```
+   The frontend will be available at `http://localhost:${FRONTEND_PORT:-3000}`
+   - Port configured via `FRONTEND_PORT` in root `.env` file
 
-## Usage Guide
+2. **Local development (recommended for hot reload):**
+   ```bash
+   cd frontend
+   npm install
+   # Port is read from FRONTEND_PORT env var or defaults to 3000
+   npm run dev
+   ```
+   The frontend will be available at `http://localhost:${FRONTEND_PORT:-3000}` with Vite hot reload
+   - Port and API proxy target configured via `.env` file at project root
 
-### Web Interface
+### Full Stack Development
 
-1. **Select Input Type**: Click on the appropriate tab for your spectral data
-2. **Enter Data**: 
-   - Use the "Add Row" button to add more data points
-   - Paste data from spreadsheets using "Paste from Clipboard" or Ctrl+V
-   - Use keyboard shortcuts: Arrow keys to navigate, Ctrl+C to copy, Ctrl+V to paste
-   - Select multiple cells by clicking and dragging
-   - Enter molecular weight in the dedicated field
-3. **Configure Results**: Choose the number of results to retrieve (5-50)
-4. **Run Prediction**: Click "Predict Structure" to start the analysis
-5. **View Results**: Browse the ranked list of similar molecular structures
-
-#### Spreadsheet Features
-- **Keyboard Navigation**: Use arrow keys to move between cells
-- **Range Selection**: Click and drag to select multiple cells
-- **Copy/Paste**: Ctrl+C to copy, Ctrl+V to paste data
-- **Clear Cells**: Delete or Backspace to clear selected cells
-- **Select All**: Ctrl+A to select all cells
-
-### API Endpoints
-
-#### Health Check
 ```bash
-curl http://localhost:5000/health
+docker-compose up
 ```
 
-#### Predict from Raw Data
+This starts both backend and frontend services.
+
+## Key Features
+
+### Backend
+- **FastAPI** with automatic OpenAPI documentation
+- **Pydantic** models for request/response validation
+- **No caching** - all computation is on-demand
+- **Type hints** throughout
+- **Hot reload** via volume mounts in Docker
+
+### Frontend
+- **React 18** with TypeScript
+- **Vite** for fast builds and HMR
+- **React Query** for data fetching
+- **Zustand** for state management
+- **x-data-spreadsheet** for spreadsheet functionality
+- **Strict TypeScript** mode
+
+## Migration Notes
+
+- All caching has been removed from the backend
+- Custom spreadsheet implementation replaced with x-data-spreadsheet
+- Manual state management replaced with Zustand
+- API client uses React Query instead of manual fetch wrappers
+- Error handling uses FastAPI exception handlers and React Error Boundaries
+
+## Production Build
+
 ```bash
-curl -X POST -H "Content-Type: application/json" \
-  -d '{
-    "raw": {
-      "hsqc": [120.5, 7.2, 1.0, 110.3, 6.8, 0.8],
-      "h_nmr": [7.2, 6.8, 3.5],
-      "mw": 180.16
-    },
-    "k": 10
-  }' \
-  http://localhost:5000/predict
+# Build backend
+cd backend
+docker build -t marina-backend:latest .
+
+# Build frontend
+cd frontend
+npm run build
+# Frontend static files can be served by nginx or the FastAPI backend
 ```
 
-#### Get Metadata
+## Testing
+
 ```bash
-curl http://localhost:5000/meta/123
+# Backend tests
+cd backend
+pixi run test          # With Pixi
+# OR
+pytest                 # With pip
+
+# Frontend tests (when implemented)
+cd frontend
+npm test
 ```
 
-## Data Format Specifications
+## Environment Variables
 
-### HSQC NMR Data
-- **Format**: Array of triplets [H_shift, C_shift, intensity]
-- **Example**: `[7.2, 120.5, 1.0, 6.8, 110.3, 0.8]`
-- **Units**: Chemical shifts in ppm, intensities as relative values
+**Single Source of Truth**: All port configuration is managed through a root `.env` file.
 
-### H NMR Data  
-- **Format**: Array of chemical shift values
-- **Example**: `[7.2, 6.8, 3.5, 2.1]`
-- **Units**: Chemical shifts in ppm
+Create a `.env` file in the project root (see `.env.example`):
 
-### C NMR Data
-- **Format**: Array of chemical shift values  
-- **Example**: `[120.5, 110.3, 55.2, 21.7]`
-- **Units**: Chemical shifts in ppm
+### Port Configuration (Single Source of Truth)
 
-### Mass Spectrometry Data
-- **Format**: Array of pairs [m/z, intensity]
-- **Example**: `[180.5, 1000, 150.3, 800, 120.1, 600]`
-- **Units**: m/z in atomic mass units, intensities as relative values
+- `BACKEND_PORT`: Backend server port (default: `5000`)
+- `BACKEND_HOST`: Backend server host (default: `0.0.0.0`)
+- `FRONTEND_PORT`: Frontend dev server port (default: `3000`)
+- `VITE_API_BASE`: Backend API URL for frontend (default: `http://localhost:5000`)
 
-### Molecular Weight
-- **Format**: Single scalar value
-- **Example**: `180.16`
-- **Units**: g/mol
+**Note**: These ports are used consistently across:
+- Docker Compose (`docker-compose.yml`)
+- Vite dev server (`frontend/vite.config.ts`)
+- Frontend API client (`frontend/src/services/api.ts`)
+- Pixi tasks (`backend/pixi.toml`)
+- Backend config (`backend/src/config.py`)
 
-### Environment Variables
+### Other Configuration
 
-- `PORT`: Server port (default: 5000)
-- `DATA_DIR`: Data directory path
+- **Required:**
+  - `DATA_DIR`: Path to data directory (default: `data`)
+  - `METADATA_PATH`: Path to metadata.json (default: `data/metadata.json`)
 
-## Citation
+- **Optional:**
+  - `MOLECULE_IMG_SIZE`: Molecule image size in pixels (default: `400`)
+  - `DEFAULT_TOP_K`: Default number of results (default: `10`)
+  - `MAX_TOP_K`: Maximum number of results (default: `50`)
+  - `HIGHLIGHT_DEBUG`: Enable debug logging for highlighting (default: `false`)
+  - `RDKIT_ENABLED`: Enable RDKit rendering (default: `true`)
 
-If you use this software in your research, please cite:
+## Troubleshooting
 
+### Import Errors
+
+If you see import errors when running the backend:
+- Ensure you're running from the correct directory
+- Check that `sys.path` adjustments in route files are working
+- Verify all `__init__.py` files exist in package directories
+
+### Docker Issues
+
+**Port conflicts:**
+- Change `BACKEND_PORT` or `FRONTEND_PORT` in root `.env` file
+- Or stop other services using those ports
+- All port references will automatically use the new values
+
+**Volume mount issues:**
+- Ensure paths in `docker-compose.yml` are correct relative to the compose file
+- Check file permissions on mounted directories
+
+**Model loading fails:**
+- Verify `data/` directory is mounted correctly
+- Check that model files exist in the data directory
+- Review logs: `docker-compose logs backend`
+
+### Model Loading
+
+If the model fails to load:
+- Check that `data/best.ckpt` exists
+- Verify `data/params.json` is present
+- Ensure `data/metadata.json` is accessible
+- Check logs for specific error messages
+
+### Hot Reload Not Working
+
+**Backend:**
+- Verify volume mount: `./backend/src:/app/src:rw` (should be `rw` not `ro`)
+- Check that uvicorn is running with `--reload` flag
+- Restart container: `docker-compose restart backend`
+
+**Frontend:**
+- For development, run `npm run dev` locally instead of using Docker
+- Or use a dev Dockerfile that runs Vite dev server
+
+## Architecture Overview
+
+### Backend Structure
+
+- `src/api/` - FastAPI routes and middleware
+- `src/services/` - Business logic (model, rendering, metadata)
+- `src/domain/` - Domain models and core logic
+  - `models/` - Pydantic request/response models
+  - `fingerprint/` - Fingerprint loading and utilities
+  - `drawing/` - Molecule drawing and visualization
+- `src/config.py` - Configuration management
+
+### Frontend Structure
+
+- `src/pages/` - Top-level page components
+- `src/components/` - Reusable UI components
+  - `common/` - Shared components (Button, Card, ErrorBoundary)
+  - `spectral/` - Spectral input components
+  - `spreadsheet/` - Spreadsheet table component
+  - `results/` - Results display components
+  - `analysis/` - Analysis page components
+- `src/services/` - API client and React Query hooks
+- `src/store/` - Zustand state management
+
+### Data Flow
+
+1. User inputs spectral data or SMILES
+2. Frontend sends request to FastAPI backend
+3. Backend processes with ML model
+4. Results returned with molecule images and metadata
+5. Frontend displays results and allows analysis
+6. Analysis page shows fingerprint visualization and overlays
+
+## Contributing
+
+### Code Style
+
+- **Backend**: Follow PEP 8, use type hints
+- **Frontend**: Follow ESLint rules, use TypeScript strict mode
+
+### Commit Messages
+
+Use conventional commits:
+- `feat:` for new features
+- `fix:` for bug fixes
+- `docs:` for documentation
+- `refactor:` for code refactoring
+
+### Pull Request Process
+
+1. Create feature branch from `main`
+2. Make changes with tests
+3. Ensure all tests pass
+4. Update documentation if needed
+5. Submit PR with clear description
+
+## Deployment
+
+### Production Build
+
+**Backend:**
+```bash
+cd backend
+docker build -t marina-backend:latest .
 ```
 
+**Frontend:**
+```bash
+cd frontend
+npm run build
+# Static files in dist/ can be served by nginx or FastAPI
 ```
+
+### Environment Setup
+
+- Set all required environment variables
+- Ensure data directory is accessible
+- Configure reverse proxy (nginx) if needed
+- Set up SSL certificates for HTTPS
+
+### Scaling Considerations
+
+- Backend can be scaled horizontally (stateless)
+- Use load balancer for multiple backend instances
+- Consider Redis for rate limiting in production
+- Frontend is static and can be served via CDN
+

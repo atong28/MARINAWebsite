@@ -18,6 +18,8 @@ services:
       # Server configuration
       - PORT=5000
       - HOST=${BACKEND_HOST:-0.0.0.0}
+      # Pixi path
+      - PATH=/root/.pixi/bin:$PATH
       # Data configuration
       - DATA_DIR=/app/data
       - METADATA_PATH=/app/data/metadata.json
@@ -34,7 +36,8 @@ services:
     restart: unless-stopped
     healthcheck:
       # Health check uses internal container port (5000)
-      test: ["CMD", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health')"]
+      # Use pixi run to access python in the pixi environment
+      test: ["CMD", "pixi", "run", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health')"]
       interval: 30s
       timeout: 10s
       retries: 3

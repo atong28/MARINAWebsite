@@ -1,38 +1,43 @@
-# Multi-stage Dockerfile for MARINA backend
-# Stage 1: Base dependencies (PyTorch, RDKit) - rarely changes
-FROM python:3.11-slim as base-deps
+# Multi-stage Dockerfile for MARINA backend using Pixi
+# Stage 1: Install Pixi and dependencies
+FROM ubuntu:22.04 as pixi-base
 
-# Install system dependencies
+# Install system dependencies required for pixi and conda/mamba
 RUN apt-get update && apt-get install -y \
-    build-essential \
+    curl \
+    ca-certificates \
+    git \
+    bzip2 \
     && rm -rf /var/lib/apt/lists/*
 
-# Install heavy dependencies that rarely change
-RUN pip install --no-cache-dir \
-    torch>=2.0.0 \
-    rdkit-pypi>=2023.3.1 \
-    numpy>=1.24.0
-
-# Stage 2: Application dependencies - changes more often
-FROM base-deps as app-deps
+# Install Pixi
+RUN curl -fsSL https://pixi.sh/install.sh | bash
+ENV PATH="/root/.pixi/bin:$PATH"
 
 WORKDIR /app
 
-# Copy requirements and install
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+# Copy pixi configuration files
+COPY pixi.toml pixi.lock ./
 
-# Stage 3: Application code - changes frequently (mounted in dev)
-FROM app-deps
+# Install dependencies using pixi
+# This creates the conda environment with all dependencies
+RUN pixi install --frozen
+
+# Stage 2: Application code
+FROM pixi-base
 
 WORKDIR /app
 
 # Copy application code (will be overridden by volume mount in dev)
 COPY src/ ./src/
 
+# Ensure pixi is in PATH
+ENV PATH="/root/.pixi/bin:$PATH"
+
 # Expose port
 EXPOSE 5000
 
-# Default command (use uvicorn with reload for development)
-CMD ["uvicorn", "src.api.app:app", "--host", "0.0.0.0", "--port", "5000", "--reload"]
-
+# Default command using pixi run task
+# Use the 'start' task from pixi.toml which runs uvicorn with reload
+# pixi run automatically activates the environment and runs the command
+CMD ["pixi", "run", "start"]

@@ -18,6 +18,7 @@ function MainPage() {
   const [availableExamples, setAvailableExamples] = useState<ExampleMetadata[]>([])
   const [selectedExample, setSelectedExample] = useState<string>('')
   const [isLoadingExamples, setIsLoadingExamples] = useState(false)
+  const [hasInvalidSpreadsheet, setHasInvalidSpreadsheet] = useState(false)
   
   const {
     hsqc,
@@ -64,15 +65,64 @@ function MainPage() {
     loadExamples()
   }, [])
   
+  // Helper function to filter out NaN and null values from arrays
+  const filterNaNValues = (arr: number[]): number[] => {
+    return arr.filter((val) => {
+      // Filter out NaN, null, and undefined values
+      return val !== null && val !== undefined && !Number.isNaN(val) && isFinite(val)
+    })
+  }
+  
   const handlePredict = () => {
-    const raw: any = {}
-    if (hsqc.length > 0) raw.hsqc = hsqc
-    if (h_nmr.length > 0) raw.h_nmr = h_nmr
-    if (c_nmr.length > 0) raw.c_nmr = c_nmr
-    if (mass_spec.length > 0) raw.mass_spec = mass_spec
-    if (mw !== null) raw.mw = mw
+    // Log raw data from store (with NaN values)
+    console.log('[MainPage] Raw data from store:', {
+      hsqc: { length: hsqc.length, sample: hsqc.slice(0, 10) },
+      h_nmr: { length: h_nmr.length, sample: h_nmr.slice(0, 10) },
+      c_nmr: { length: c_nmr.length, sample: c_nmr.slice(0, 10) },
+      mass_spec: { length: mass_spec.length, sample: mass_spec.slice(0, 10) },
+      mw,
+    })
     
-    predictMutation.mutate({ raw, k })
+    // Sanitize arrays by filtering out NaN values
+    const sanitizedHSQC = filterNaNValues(hsqc)
+    const sanitizedHNMR = filterNaNValues(h_nmr)
+    const sanitizedCNMR = filterNaNValues(c_nmr)
+    const sanitizedMassSpec = filterNaNValues(mass_spec)
+    
+    // Log sanitized data
+    console.log('[MainPage] Sanitized data (NaN filtered):', {
+      hsqc: { length: sanitizedHSQC.length, sample: sanitizedHSQC.slice(0, 10) },
+      h_nmr: { length: sanitizedHNMR.length, sample: sanitizedHNMR.slice(0, 10) },
+      c_nmr: { length: sanitizedCNMR.length, sample: sanitizedCNMR.slice(0, 10) },
+      mass_spec: { length: sanitizedMassSpec.length, sample: sanitizedMassSpec.slice(0, 10) },
+      mw,
+    })
+    
+    // Build request payload - only include arrays with at least one valid value
+    const raw: any = {}
+    if (sanitizedHSQC.length > 0) raw.hsqc = sanitizedHSQC
+    if (sanitizedHNMR.length > 0) raw.h_nmr = sanitizedHNMR
+    if (sanitizedCNMR.length > 0) raw.c_nmr = sanitizedCNMR
+    if (sanitizedMassSpec.length > 0) raw.mass_spec = sanitizedMassSpec
+    if (mw !== null && mw !== undefined && !Number.isNaN(mw) && isFinite(mw)) {
+      raw.mw = mw
+    }
+    
+    const payload = { raw, k }
+    
+    // Log full request payload
+    console.log('[MainPage] Sending predict request:', {
+      ...payload,
+      raw: {
+        ...raw,
+        hsqc: raw.hsqc ? { length: raw.hsqc.length, first10: raw.hsqc.slice(0, 10) } : undefined,
+        h_nmr: raw.h_nmr ? { length: raw.h_nmr.length, first10: raw.h_nmr.slice(0, 10) } : undefined,
+        c_nmr: raw.c_nmr ? { length: raw.c_nmr.length, first10: raw.c_nmr.slice(0, 10) } : undefined,
+        mass_spec: raw.mass_spec ? { length: raw.mass_spec.length, first10: raw.mass_spec.slice(0, 10) } : undefined,
+      },
+    })
+    
+    predictMutation.mutate(payload)
   }
   
   const handleSmilesSearch = () => {
@@ -142,7 +192,7 @@ function MainPage() {
       
       {activeTab === 'spectral' && (
         <div className="spectral-input-section">
-          <SpectralInputTabs />
+          <SpectralInputTabs onValidationChange={(s) => setHasInvalidSpreadsheet(s.anyInvalid)} />
           <div className="controls">
             <label>
               Number of results:
@@ -156,10 +206,14 @@ function MainPage() {
             </label>
             <button
               onClick={handlePredict}
-              disabled={predictMutation.isPending || !health?.model_loaded}
+              disabled={predictMutation.isPending || !health?.model_loaded || hasInvalidSpreadsheet}
+              title={hasInvalidSpreadsheet ? 'You have incomplete data in the spreadsheet.' : ''}
             >
               {predictMutation.isPending ? 'Predicting...' : 'Predict Structure'}
             </button>
+            {hasInvalidSpreadsheet && (
+              <span style={{ color: '#c00', fontSize: 12 }}>Incomplete data detected. Please fix or use Condense rows.</span>
+            )}
             <div className="example-loader">
               <select
                 value={selectedExample}

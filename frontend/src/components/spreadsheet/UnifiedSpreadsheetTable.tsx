@@ -20,6 +20,7 @@ interface UnifiedSpreadsheetTableProps {
   onHNMRChange: (data: number[]) => void
   onCNMRChange: (data: number[]) => void
   onMassSpecChange: (data: number[]) => void
+  onValidationChange?: (summary: { hsqcInvalid: number; hInvalid: number; cInvalid: number; msInvalid: number; anyInvalid: boolean }) => void
 }
 
 function UnifiedSpreadsheetTable({
@@ -31,6 +32,7 @@ function UnifiedSpreadsheetTable({
   onHNMRChange,
   onCNMRChange,
   onMassSpecChange,
+  onValidationChange,
 }: UnifiedSpreadsheetTableProps) {
   const hotTableRef = useRef<HotTableRef>(null)
   const [validationSummary, setValidationSummary] = useState<{ hsqcInvalid: number; hInvalid: number; cInvalid: number; msInvalid: number }>({ hsqcInvalid: 0, hInvalid: 0, cInvalid: 0, msInvalid: 0 })
@@ -140,13 +142,12 @@ function UnifiedSpreadsheetTable({
     return !filled || bothFilled
   }
 
-  // Convert 2D array back to separate data arrays on changes (position-preserving emission of only complete rows)
-  const handleAfterChange = useCallback((changes: any[] | null, source: string) => {
-    if (!changes || source === 'loadData' || !hotTableRef.current?.hotInstance) {
+  const extractAndEmit = useCallback((gridData: (number | string)[][]) => {
+    if (!hotTableRef.current?.hotInstance) {
       return
     }
 
-    const currentData = hotTableRef.current.hotInstance.getData() as (number | string)[][]
+    const currentData = gridData
 
     // Position-preserving emission: fixed-size arrays using NaN for blanks
     const hsqcData: number[] = new Array(maxRows * 3).fill(NaN)
@@ -184,13 +185,27 @@ function UnifiedSpreadsheetTable({
     })
 
     setValidationSummary({ hsqcInvalid, hInvalid, cInvalid, msInvalid })
+    if (typeof onValidationChange === 'function') {
+      onValidationChange({ hsqcInvalid, hInvalid, cInvalid, msInvalid, anyInvalid: (hsqcInvalid + hInvalid + cInvalid + msInvalid) > 0 })
+    }
+    // Emit changes to store - this will trigger re-renders but that's expected
     onHSQCChange(hsqcData)
     onHNMRChange(hNmrData)
     onCNMRChange(cNmrData)
     onMassSpecChange(massSpecData)
-  }, [onHSQCChange, onHNMRChange, onCNMRChange, onMassSpecChange])
+  }, [maxRows, onHSQCChange, onHNMRChange, onCNMRChange, onMassSpecChange, onValidationChange])
 
-  const handleCondense = () => {
+  // Convert 2D array back to separate data arrays on changes
+  const handleAfterChange = useCallback((changes: any[] | null, source: string) => {
+    // Ignore changes from loadData source to prevent loops
+    if (!changes || source === 'loadData' || !hotTableRef.current?.hotInstance) {
+      return
+    }
+    const currentData = hotTableRef.current.hotInstance.getData() as (number | string)[][]
+    extractAndEmit(currentData)
+  }, [extractAndEmit])
+
+  const handleCondense = useCallback(() => {
     if (!hotTableRef.current?.hotInstance) return
     const hot = hotTableRef.current.hotInstance
     const currentData = (hot.getData() as (number | string | undefined)[][]).map((r) => r ?? [])
@@ -229,8 +244,17 @@ function UnifiedSpreadsheetTable({
     condenseSegment([4])     // C NMR
     condenseSegment([5,6])   // Mass Spec
 
+    console.log('[UnifiedSpreadsheetTable] Condensing rows, updating store with condensed data')
+    
+    // IMPORTANT: Update the store FIRST before updating the table
+    // This ensures the store has the condensed state, so when the component re-renders,
+    // tableData will match what we're about to load into Handsontable
+    extractAndEmit(newData)
+    
+    // Then update the table with condensed data
+    // loadData will trigger afterChange with source='loadData', which we ignore
     hot.loadData(newData)
-  }
+  }, [extractAndEmit])
 
   return (
     <div>

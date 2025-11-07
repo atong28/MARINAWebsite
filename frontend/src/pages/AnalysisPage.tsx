@@ -1,14 +1,12 @@
 import { useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAnalysisPageStore, useMainPageStore } from '../store/store'
-import { api, useAnalyze } from '../services/api'
+import { useAnalyze } from '../services/api'
 import FingerprintIndices from '../components/analysis/FingerprintIndices'
 import MoleculeOverlay from '../components/analysis/MoleculeOverlay'
 import SecondaryRetrieval from '../components/analysis/SecondaryRetrieval'
 import Ablation from '../components/analysis/Ablation'
 import './AnalysisPage.css'
-
-const ABALATION_BIT_THRESHOLD = 0.5
 
 function AnalysisPage() {
   const navigate = useNavigate()
@@ -21,8 +19,6 @@ function AnalysisPage() {
     retrievedFpIndices,
     bitEnvironments,
     moleculeSvgWithOverlays,
-    originalSpectralData,
-    originalSimilarityMap,
     setSelectedMolecule,
     setRetrievedFpIndices,
     setBitEnvironments,
@@ -71,10 +67,14 @@ function AnalysisPage() {
 
     const seedKey = `${selectedMolecule.smiles}-${selectedMolecule.index}`
 
+    // Only initialize if this is a new molecule selection (seedKey changed)
+    // Don't reset if we already have data for this molecule
     if (ablationSeedKey === seedKey) {
       return
     }
 
+    // Initialize ablation data only when a new molecule is selected
+    // Use the current values from the main page store at the time of selection
     const snapshot = {
       hsqc: Array.from(hsqc),
       h_nmr: Array.from(h_nmr),
@@ -90,14 +90,10 @@ function AnalysisPage() {
     setAblationPredictedFp(null)
     setAblationSimilarityMap(null)
     setAblationSeedKey(seedKey)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
     selectedMolecule,
     ablationSeedKey,
-    hsqc,
-    h_nmr,
-    c_nmr,
-    mass_spec,
-    mw,
     predictedFp,
     setOriginalSpectralData,
     setAblationSpectralData,
@@ -108,61 +104,9 @@ function AnalysisPage() {
     setAblationSeedKey,
   ])
 
-  useEffect(() => {
-    let isMounted = true
-
-    const fetchOriginalSimilarity = async () => {
-      if (!selectedMolecule || !originalSpectralData || !predictedFp) {
-        return
-      }
-
-      const seedKey = `${selectedMolecule.smiles}-${selectedMolecule.index}`
-      if (ablationSeedKey !== seedKey) {
-        return
-      }
-
-      if (originalSimilarityMap !== null) {
-        return
-      }
-
-      try {
-        const response = await api.ablation({
-          raw: {
-            hsqc: originalSpectralData.hsqc.length ? originalSpectralData.hsqc : undefined,
-            h_nmr: originalSpectralData.h_nmr.length ? originalSpectralData.h_nmr : undefined,
-            c_nmr: originalSpectralData.c_nmr.length ? originalSpectralData.c_nmr : undefined,
-            mass_spec: originalSpectralData.mass_spec.length ? originalSpectralData.mass_spec : undefined,
-            mw: originalSpectralData.mw ?? undefined,
-          },
-          smiles: selectedMolecule.smiles,
-          bit_threshold: ABALATION_BIT_THRESHOLD,
-          reference_fp: predictedFp,
-        })
-
-        if (isMounted) {
-          setOriginalSimilarityMap(response.similarity_map ?? null)
-        }
-      } catch (error) {
-        if (isMounted) {
-          console.error('[AnalysisPage] Failed to fetch original similarity map:', error)
-          setOriginalSimilarityMap(null)
-        }
-      }
-    }
-
-    fetchOriginalSimilarity()
-
-    return () => {
-      isMounted = false
-    }
-  }, [
-    selectedMolecule,
-    originalSpectralData,
-    predictedFp,
-    originalSimilarityMap,
-    ablationSeedKey,
-    setOriginalSimilarityMap,
-  ])
+  // Removed automatic fetch of originalSimilarityMap on page load
+  // This was causing 422 errors because the data might not be sanitized yet
+  // The original similarity map will be fetched on-demand when needed (e.g., when ablation results are shown)
 
   useEffect(() => {
     if (result) {

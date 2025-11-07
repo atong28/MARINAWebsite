@@ -2,7 +2,11 @@ import { useMainPageStore } from '../../store/store'
 import UnifiedSpreadsheetTable from '../spreadsheet/UnifiedSpreadsheetTable'
 import './SpectralInputTabs.css'
 
-function SpectralInputTabs() {
+interface SpectralInputTabsProps {
+  onValidationChange?: (summary: { hsqcInvalid: number; hInvalid: number; cInvalid: number; msInvalid: number; anyInvalid: boolean }) => void
+}
+
+function SpectralInputTabs({ onValidationChange }: SpectralInputTabsProps) {
   const { 
     hsqc, 
     h_nmr, 
@@ -39,6 +43,7 @@ function SpectralInputTabs() {
           onHNMRChange={setHNMR}
           onCNMRChange={setCNMR}
           onMassSpecChange={setMassSpec}
+          onValidationChange={onValidationChange}
         />
       </div>
       

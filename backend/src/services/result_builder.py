@@ -1,10 +1,11 @@
 from typing import Dict, Optional
-
+import logging
 from rdkit import Chem
 from rdkit.Chem import Descriptors
 
 from src.domain.models.prediction_result import DatabaseLinks
 
+logger = logging.getLogger(__name__)
 
 def build_result_card(
     idx: int, 
@@ -26,10 +27,8 @@ def build_result_card(
             if mol:
                 exact_mass = Descriptors.ExactMolWt(mol)
         except Exception as e:
-            # Handle errors gracefully - exact_mass remains None
-            print(f"Error computing exact mass for smiles: {smiles}")
-            print(f"Error: {e}")
-            pass
+            logger.error(f"Error computing exact mass for smiles: {smiles}")
+            logger.error(f"Error: {e}")
     
     # Primary name/link
     primary_name = None

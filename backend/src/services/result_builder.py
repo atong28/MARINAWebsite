@@ -14,7 +14,9 @@ def build_result_card(
 ) -> Dict:
     """Build a result card dictionary from metadata entry."""
     # Choose display SMILES
-    smiles = entry.get('canonical_3d_smiles') if entry.get('canonical_3d_smiles') != 'N/A' else entry.get('canonical_2d_smiles')
+    smiles = entry.get('canonical_3d_smiles')
+    if smiles is None or smiles == 'N/A':
+        smiles = entry.get('canonical_2d_smiles')
     
     # Compute exact mass using RDKit
     exact_mass = None

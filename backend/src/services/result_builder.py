@@ -29,8 +29,9 @@ def build_result_card(
             if mol:
                 exact_mass = Descriptors.ExactMolWt(mol)
         except Exception as e:
-            logger.error(f"Error computing exact mass for smiles: {smiles}")
-            logger.error(f"Error: {e}")
+            pass
+    if exact_mass is None:
+        logger.error(f"Exact mass is None for smiles: {smiles}")
     
     # Primary name/link
     primary_name = None

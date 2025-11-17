@@ -23,8 +23,10 @@ def build_result_card(
             mol = Chem.MolFromSmiles(smiles)
             if mol:
                 exact_mass = Descriptors.ExactMolWt(mol)
-        except Exception:
+        except Exception as e:
             # Handle errors gracefully - exact_mass remains None
+            print(f"Error computing exact mass for smiles: {smiles}")
+            print(f"Error: {e}")
             pass
     
     # Primary name/link

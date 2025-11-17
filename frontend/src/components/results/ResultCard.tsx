@@ -24,6 +24,11 @@ function ResultCard({ result, position, onAnalyze, showAnalyzeButton = true }: R
       
       <div className="result-name-section">
         <h3 className="result-name">{result.name || result.smiles}</h3>
+        {result.exact_mass && (
+          <div className="result-exact-mass">
+            Exact Mass: {result.exact_mass.toFixed(4)} g/mol
+          </div>
+        )}
       </div>
       
       <MoleculeViewer svg={result.svg || result.plain_svg} smiles={result.smiles} />

@@ -1,5 +1,8 @@
 from typing import Dict, Optional
 
+from rdkit import Chem
+from rdkit.Chem import Descriptors
+
 from src.domain.models.prediction_result import DatabaseLinks
 
 
@@ -12,6 +15,17 @@ def build_result_card(
     """Build a result card dictionary from metadata entry."""
     # Choose display SMILES
     smiles = entry.get('canonical_3d_smiles') if entry.get('canonical_3d_smiles') != 'N/A' else entry.get('canonical_2d_smiles')
+    
+    # Compute exact mass using RDKit
+    exact_mass = None
+    if smiles:
+        try:
+            mol = Chem.MolFromSmiles(smiles)
+            if mol:
+                exact_mass = Descriptors.ExactMolWt(mol)
+        except Exception:
+            # Handle errors gracefully - exact_mass remains None
+            pass
     
     # Primary name/link
     primary_name = None
@@ -57,6 +71,7 @@ def build_result_card(
         'np_superclass': None,
         'np_class': None,
         'retrieved_molecule_fp_indices': [],
-        'bit_environments': {}
+        'bit_environments': {},
+        'exact_mass': exact_mass
     }
 

@@ -21,6 +21,7 @@ class ResultCard(BaseModel):
     database_links: DatabaseLinks = Field(default_factory=DatabaseLinks, description="All database links")
     retrieved_molecule_fp_indices: List[int] = Field(default_factory=list, description="Fingerprint bit indices for this molecule")
     bit_environments: Dict[int, Dict[str, Any]] = Field(default_factory=dict, description="Bit environment data for each bit index")
+    exact_mass: Optional[float] = Field(None, description="Exact molecular mass in g/mol computed with RDKit")
 
 
 class PredictResponse(BaseModel):

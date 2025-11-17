@@ -37,6 +37,7 @@ export interface ResultCard {
   }
   retrieved_molecule_fp_indices: number[]
   bit_environments: Record<number, any>
+  exact_mass?: number
 }
 
 export interface PredictResponse {

@@ -69,3 +69,4 @@ htmlcov/
 Thumbs.db
 
 backend/data/*
+backend/pixi.lock

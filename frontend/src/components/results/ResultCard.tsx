@@ -10,6 +10,9 @@ interface ResultCardProps {
 }
 
 function ResultCard({ result, position, onAnalyze, showAnalyzeButton = true }: ResultCardProps) {
+  // Debug log exact_mass before rendering
+  console.log(`[ResultCard] Position #${position}: exact_mass =`, result.exact_mass, '| type:', typeof result.exact_mass, '| SMILES:', result.smiles, '| will render:', result.exact_mass !== undefined && result.exact_mass !== null)
+  
   const { database_links } = result
   const hasDatabaseLinks = database_links && (
     database_links.coconut || database_links.lotus || database_links.npmrd

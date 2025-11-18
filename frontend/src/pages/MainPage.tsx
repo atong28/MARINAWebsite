@@ -40,22 +40,12 @@ function MainPage() {
   const { data: health } = useHealth()
   const predictMutation = usePredict({
     onSuccess: (data) => {
-      console.log('[MainPage] Received prediction results:', data.results.length, 'results')
-      // Log exact_mass for each result
-      data.results.forEach((result, idx) => {
-        console.log(`[MainPage] Result ${idx}: exact_mass =`, result.exact_mass, '| SMILES:', result.smiles, '| name:', result.name)
-      })
       setResults(data.results, data.pred_fp || null)
       setAnalysisSource('prediction')
     },
   })
   const smilesSearchMutation = useSmilesSearch({
     onSuccess: (data) => {
-      console.log('[MainPage] Received SMILES search results:', data.results.length, 'results')
-      // Log exact_mass for each result
-      data.results.forEach((result, idx) => {
-        console.log(`[MainPage] Result ${idx}: exact_mass =`, result.exact_mass, '| SMILES:', result.smiles, '| name:', result.name)
-      })
       setResults(data.results)
       setAnalysisSource('smiles-search')
     },

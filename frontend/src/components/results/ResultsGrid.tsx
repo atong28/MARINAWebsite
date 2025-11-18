@@ -9,12 +9,6 @@ interface ResultsGridProps {
 }
 
 function ResultsGrid({ results, onAnalyze, showAnalyzeButton = true }: ResultsGridProps) {
-  // Debug log before rendering
-  console.log('[ResultsGrid] Rendering', results.length, 'results')
-  results.forEach((result, idx) => {
-    console.log(`[ResultsGrid] Result ${idx} (index ${result.index}): exact_mass =`, result.exact_mass, '| has exact_mass:', result.exact_mass !== undefined && result.exact_mass !== null)
-  })
-  
   return (
     <div className="results-grid">
       <h2>Results ({results.length})</h2>

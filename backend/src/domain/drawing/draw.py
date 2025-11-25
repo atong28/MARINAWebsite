@@ -501,6 +501,7 @@ def compute_bit_environment(smiles: str, bit_index: int, radius: int):
     Coordinates normalized to [0,1] based on drawing conformer.
     """
     mol = Chem.MolFromSmiles(smiles)
+    Chem.RemoveStereochemistry(mol)
     if mol is None:
         return None
     # Ensure 2D coords

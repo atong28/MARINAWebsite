@@ -116,7 +116,7 @@ async def predict(request: Request, data: PredictRequest):
             except Exception:
                 plain_svg = None
             
-            # Similarity
+            # Similarity (clamped to [0.0, 1.0])
             similarity_val = scores[i] if i < len(scores) and scores[i] is not None else 0.0
             try:
                 similarity_float = float(similarity_val)
@@ -124,6 +124,9 @@ async def predict(request: Request, data: PredictRequest):
                     similarity_float = 0.0
             except (ValueError, TypeError):
                 similarity_float = 0.0
+
+            # Ensure similarity is always in [0.0, 1.0] before returning
+            similarity_float = max(0.0, min(1.0, similarity_float))
             
             # Build card
             card = build_result_card(idx, entry, similarity_float, enhanced_svg)

@@ -125,7 +125,7 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
             except Exception:
                 plain_svg = None
             
-            # Similarity
+            # Similarity (clamped to [0.0, 1.0])
             similarity_val = sims_sorted[i] if i < len(sims_sorted) and sims_sorted[i] is not None else 0.0
             try:
                 similarity_float = float(similarity_val)
@@ -133,6 +133,9 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
                     similarity_float = 0.0
             except (ValueError, TypeError):
                 similarity_float = 0.0
+
+            # Ensure similarity is always in [0.0, 1.0] before returning
+            similarity_float = max(0.0, min(1.0, similarity_float))
             
             # Build card
             card = build_result_card(idx, entry, similarity_float, enhanced_svg)

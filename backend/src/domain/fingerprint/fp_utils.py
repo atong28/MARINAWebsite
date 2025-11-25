@@ -127,6 +127,7 @@ def get_bitinfos(
     """
     ignore_atoms = tuple(ignore_atoms or ())
     mol = Chem.MolFromSmiles(smiles)
+    Chem.RemoveStereochemistry(mol)
     if mol is None:
         return None, None
 

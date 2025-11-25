@@ -23,6 +23,7 @@ from src.domain.fingerprint.fp_utils import (
     build_rankingset_csr,
     generate_fragments_for_training,
 )
+from src.domain.fingerprint.fp_utils import count_circular_substructures
 
 # ----------------------------------------------------------------------
 # Internal: PID-aware read-only LMDB wrapper (lazy-open per process)
@@ -355,8 +356,6 @@ class EntropyFPLoader(FPLoader):
         return torch.from_numpy(mfp)
 
     def build_mfp_for_smiles(self, smiles: str, ignore_atoms=None) -> torch.Tensor:
-        # Legacy dense tensor builder (kept for compatibility)
-        from .fp_utils import count_circular_substructures  # local import to avoid cycles
         if self.out_dim is None or self.max_radius is None:
             raise RuntimeError("Call setup() first.")
         mfp = np.zeros(self.out_dim, dtype=np.float32)
@@ -388,7 +387,6 @@ class EntropyFPLoader(FPLoader):
         Returns sorted list of 0-indexed bit positions that are 1 for this SMILES.
         If parsing fails or any error occurs, returns None.
         """
-        from .fp_utils import count_circular_substructures  # local import to avoid cycles
         if self.out_dim is None or self.max_radius is None:
             raise RuntimeError("Call setup() first.")
         try:

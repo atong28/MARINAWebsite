@@ -1,31 +1,10 @@
 import logging
 from typing import Optional, Tuple
-from functools import wraps
 
 import torch
 import torch.nn.functional as F
 
-def wrap_method(method):
-    @wraps(method)
-    def wrapper(*args, **kwargs):
-        # Set matmul precision to highest
-        torch.set_float32_matmul_precision('highest')
-        try:
-            result = method(*args, **kwargs)
-        finally:
-            # Reset matmul precision to default after method execution
-            torch.set_float32_matmul_precision('high')
-        return result
-    return wrapper
 
-def set_float32_highest_precision(cls):
-    """Class decorator to set float32 matmul precision to highest for all methods."""
-    for attr_name, attr_value in cls.__dict__.items():
-        if callable(attr_value):
-            setattr(cls, attr_name, wrap_method(attr_value))
-    return cls
-
-@set_float32_highest_precision
 class RankingSet(torch.nn.Module):
     """
     Minimal fast similarity-ranking over a bank of fingerprints.
@@ -77,26 +56,6 @@ class RankingSet(torch.nn.Module):
         return self.data.device
 
     # -------- Utilities --------
-
-    @staticmethod
-    def round(fp: torch.Tensor) -> torch.Tensor:
-        """
-        Convert a fingerprint vector to a binary vector with 1s at indices equal to the max value.
-        """
-        fp = fp.flatten()
-        hi = torch.max(fp)
-        out = torch.zeros_like(fp)
-        out[fp == hi] = 1
-        return out
-
-    @staticmethod
-    def normalized_to_nonzero(fp: torch.Tensor) -> Tuple[int, ...]:
-        """
-        Indices whose values equal (within tolerance) the max of `fp`.
-        """
-        hi = torch.max(fp)
-        nonzero = torch.nonzero(torch.isclose(fp, hi), as_tuple=False)
-        return tuple(nonzero[:, 0].tolist())
 
     # -------- Internal helpers --------
 
@@ -158,9 +117,28 @@ class RankingSet(torch.nn.Module):
         """
         if query.dim() == 1:
             query = query.unsqueeze(0)
-        sims = self._sims(query)                                 # (N, B)
+        sims = self._sims(query)  # (N, B)
         _, idxs = torch.topk(sims, k=min(n, sims.size(0)), dim=0)
         return idxs.squeeze(1) if idxs.size(1) == 1 else idxs
+
+    def retrieve_with_scores(
+        self, query: torch.Tensor, n: int = 50
+    ) -> Tuple[torch.Tensor, torch.Tensor]:
+        """
+        Public helper returning both similarity scores and indices.
+
+        Returns:
+            sims_topk: (n,)      if single query; else (n, B)
+            idxs_topk: (n,) int  if single query; else (n, B)
+        """
+        if query.dim() == 1:
+            query = query.unsqueeze(0)
+        sims = self._sims(query)  # (N, B)
+        k_eff = min(n, sims.size(0))
+        sims_topk, idxs_topk = torch.topk(sims, k=k_eff, dim=0)
+        if sims_topk.size(1) == 1:
+            return sims_topk.squeeze(1), idxs_topk.squeeze(1)
+        return sims_topk, idxs_topk
 
     def jaccard_rank(
         self,

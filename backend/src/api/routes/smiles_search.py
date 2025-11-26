@@ -80,12 +80,9 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
         # Use RankingSet to get results
         ranker = RankingSet(store=rankingset, metric="cosine")
         
-        # Get top-k results
-        idxs = ranker.retrieve_idx(pred.unsqueeze(0), n=k)
-        
-        # Get similarity scores
-        sims = ranker._sims(pred.unsqueeze(0))
-        sims_sorted, _ = torch.topk(sims.squeeze(), k=k, dim=0)
+        # Get similarity scores and indices together
+        sims, idxs = ranker.retrieve_with_scores(pred.unsqueeze(0), n=k)
+        sims_sorted, idxs_sorted = torch.topk(sims.squeeze(), k=k, dim=0)
         
         # Build results
         results = []

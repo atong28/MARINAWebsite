@@ -5,7 +5,6 @@ import os
 import io
 import time
 import pickle
-import argparse
 import json
 from typing import Optional, Dict, List, Union
 
@@ -456,113 +455,14 @@ class EntropyFPLoader(FPLoader):
         return torch.load(rankingset_path, weights_only=True)
 
 
-def make_fp_loader(fp_type: str, entropy_out_dim=16384, max_radius=6, retrieval_path: Optional[str] = None):
+def make_fp_loader(
+    fp_type: str,
+    entropy_out_dim=16384,
+    max_radius=6,
+    retrieval_path: Optional[str] = None,
+):
     if fp_type == "RankingEntropy":
         fp_loader = EntropyFPLoader(retrieval_path=retrieval_path)
         fp_loader.setup(entropy_out_dim, max_radius, retrieval_path=retrieval_path)
         return fp_loader
     raise NotImplementedError(f"FP type {fp_type} not implemented")
-
-
-# ---------------------------
-# CLI
-# ---------------------------
-def _cli():
-    parser = argparse.ArgumentParser(description="Fingerprint loader utilities (entropy selection + rankingset builder).")
-    sub = parser.add_subparsers(dest="cmd", required=True)
-
-    # 1) Precompute retrieval counts
-    p_counts = sub.add_parser("prepare-counts", help="Precompute fragment presence counts on retrieval set.")
-    p_counts.add_argument("--retrieval", required=True, help="Path to retrieval index (.pkl/.json) with smiles.")
-    p_counts.add_argument("--dataset-root", default=DATASET_ROOT, help="Dataset root where counts file will be stored.")
-    p_counts.add_argument("--radius", type=int, default=6)
-    p_counts.add_argument("--num-procs", type=int, default=0, help="0=auto, else explicit number.")
-
-    # 2) Build rankingset (runs selection + CSR)
-    p_rank = sub.add_parser("rankingset", help="Run entropy feature selection and build/save CSR rankingset.")
-    p_rank.add_argument("--retrieval", required=True, help="Path to retrieval index (.pkl/.json) with smiles.")
-    p_rank.add_argument("--dataset-root", default=DATASET_ROOT)
-    p_rank.add_argument("--out-dim", default=16384, help="int or 'inf'")
-    p_rank.add_argument("--radius", type=int, default=6)
-    p_rank.add_argument("--fp-type", default="RankingEntropy", help="Subdir under dataset root to save artifacts.")
-    p_rank.add_argument("--num-procs", type=int, default=0)
-    p_rank.add_argument("--no-save", action="store_true", help="If set, do not save rankingset to disk.")
-
-    # 3) Generate training fragments
-    p_frag = sub.add_parser("fragments", help="Generate per-idx fragment lists for training set.")
-    p_frag.add_argument("--index", required=True, help="Path to training index (.pkl/.json) with smiles.")
-    p_frag.add_argument("--out-dir", required=True, help="Output directory (will create 'Fragments/' inside).")
-    p_frag.add_argument("--radius", type=int, default=6)
-    p_frag.add_argument("--num-procs", type=int, default=0)
-
-    # 4) Build FP dict for a list of SMILES (stores indices; parse errors → None)
-    p_sfps = sub.add_parser("smiles-fps", help="Build {smiles: List[int]|None} of 1-bit indices and save to a pickle.")
-    p_sfps.add_argument("--smiles", required=True, help="Path to txt/json/pkl/csv with SMILES.")
-    p_sfps.add_argument("--out", required=True, help="Output pickle path (will contain {smiles: List[int] or None}).")
-    p_sfps.add_argument("--retrieval", required=True, help="Path to retrieval index (.pkl/.json) used for feature selection.")
-    p_sfps.add_argument("--dataset-root", default=DATASET_ROOT)
-    p_sfps.add_argument("--out-dim", default=16384, help="int or 'inf'")
-    p_sfps.add_argument("--radius", type=int, default=6)
-    p_sfps.add_argument("--ignore-atoms", default="", help="Comma-separated atom indices to ignore (rare; usually leave empty).")
-    p_sfps.add_argument("--num-procs", type=int, default=0, help="For counts/CSR prep if needed.")
-
-    args = parser.parse_args()
-
-    if args.cmd == "prepare-counts":
-        loader = EntropyFPLoader(dataset_root=args.dataset_root, retrieval_path=args.retrieval)
-        loader.prepare_from_retrieval(radius=args.radius, num_procs=args.num_procs)
-        print(f"Counts written to {loader._counts_path(args.radius)}")
-
-    elif args.cmd == "rankingset":
-        out_dim = args.out_dim
-        if isinstance(out_dim, str) and out_dim.lower() == "inf":
-            out_dim = "inf"
-        else:
-            out_dim = int(out_dim)
-
-        loader = EntropyFPLoader(dataset_root=args.dataset_root, retrieval_path=args.retrieval)
-        loader.setup(out_dim, args.radius, retrieval_path=args.retrieval, num_procs=args.num_procs)
-        csr = loader.build_rankingset(fp_type=args.fp_type, save=(not args.no_save), num_procs=args.num_procs)
-        print(f"CSR shape: {tuple(csr.shape)}")
-        if not args.no_save:
-            print(f"Saved rankingset to {os.path.join(args.dataset_root, args.fp_type, 'rankingset.pt')}")
-
-    elif args.cmd == "fragments":
-        generate_fragments_for_training(
-            index_path=args.index, out_dir=args.out_dir, radius=args.radius, num_procs=args.num_procs
-        )
-        print(f"Fragments written under {os.path.join(args.out_dir, 'Fragments')}")
-
-    elif args.cmd == "smiles-fps":
-        out_dim = args.out_dim
-        if isinstance(out_dim, str) and out_dim.lower() == "inf":
-            out_dim = "inf"
-        else:
-            out_dim = int(out_dim)
-
-        ignore_atoms = []
-        if args.ignore_atoms.strip():
-            ignore_atoms = [int(x) for x in args.ignore_atoms.split(",") if x.strip().isdigit()]
-
-        loader = EntropyFPLoader(dataset_root=args.dataset_root, retrieval_path=args.retrieval)
-        # Ensures selection is available (computes counts if missing)
-        loader.setup(out_dim, args.radius, retrieval_path=args.retrieval, num_procs=args.num_procs)
-
-        smiles_iter = loader._iter_smiles_from_path(args.smiles)
-        fp_dict = loader.build_fp_dict_for_smiles(smiles_iter, ignore_atoms=ignore_atoms)
-
-        # Save as a pickle of {smiles: List[int] | None}
-        out_dir = os.path.dirname(os.path.abspath(args.out))
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
-        with open(args.out, "wb") as f:
-            pickle.dump(fp_dict, f)
-
-        # Simple summary
-        n_total = len(fp_dict)
-        n_none = sum(1 for v in fp_dict.values() if v is None)
-        print(f"Wrote {n_total} entries to {args.out} ({n_none} parse failures).")
-
-
-if __name__ == "__main__":
-    _cli()

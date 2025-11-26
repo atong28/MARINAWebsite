@@ -2,7 +2,7 @@ import threading
 from typing import Optional
 import torch
 
-import src.domain.predictor as predictor_module
+from src.domain.predictor import get_session
 
 class ModelService:
     """Service for managing ML model and related resources. No caching - compute on demand."""
@@ -23,7 +23,8 @@ class ModelService:
     def is_ready(self) -> bool:
         """Check if model is loaded and ready."""
         try:
-            return predictor_module._model is not None
+            session = get_session()
+            return session.model is not None
         except Exception:
             return False
 
@@ -32,26 +33,24 @@ class ModelService:
         if not self.is_ready():
             with self._init_lock:
                 if not self.is_ready():
-                    predictor_module.load_model()
+                    get_session()
 
     def get_model(self) -> torch.nn.Module:
         """Get the loaded model. Loads if necessary."""
         self.ensure_loaded()
-        assert predictor_module._model is not None
-        return predictor_module._model
+        session = get_session()
+        return session.model
 
     def get_fp_loader(self):
         """Get the fingerprint loader. Loads model if necessary."""
         self.ensure_loaded()
-        return predictor_module._fp_loader
+        session = get_session()
+        return session.fp_loader
 
     def get_rankingset(self):
         """Get the rankingset. Loads model and rankingset if necessary."""
         self.ensure_loaded()
-        # Rankingset is loaded on-demand, not cached
-        if predictor_module._rankingset_cache is None:
-            if predictor_module._fp_loader is not None and predictor_module._args is not None:
-                rankingset = predictor_module._fp_loader.load_rankingset(predictor_module._args.fp_type)
-                return rankingset
-        return predictor_module._rankingset_cache
+        session = get_session()
+        ranker = session.get_rankingset()
+        return ranker.data
 

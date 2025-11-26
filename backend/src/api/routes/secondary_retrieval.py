@@ -88,12 +88,12 @@ async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest)
         # Use RankingSet to retrieve results
         ranker = RankingSet(store=rankingset, metric="cosine")
         
-        # Retrieve top-k indices using difference fingerprint
-        idxs = ranker.retrieve_idx(difference_prob.unsqueeze(0), n=k)
-        
-        # Get similarity scores for the retrieved indices
-        sims = ranker._sims(difference_prob.unsqueeze(0))
-        sims_sorted, _ = torch.topk(sims.squeeze(), k=k, dim=0)
+        # Retrieve top-k indices and similarity scores using difference fingerprint
+        sims, idxs = ranker.retrieve_with_scores(difference_prob.unsqueeze(0), n=k)
+
+        # Convert to 1D tensors for convenience
+        sims = sims.squeeze()
+        idxs = idxs.squeeze()
         
         # Build results
         results = []
@@ -101,7 +101,7 @@ async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest)
         molecule_renderer = MoleculeRenderer.instance()
         fp_loader = model_service.get_fp_loader()
         
-        for i, idx in enumerate(idxs.squeeze().tolist()):
+        for i, idx in enumerate(idxs.tolist()):
             entry = metadata_service.get_entry(idx)
             if not entry:
                 continue
@@ -123,7 +123,7 @@ async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest)
                 enhanced_svg = None
             
             # Similarity
-            similarity_val = sims_sorted[i] if i < len(sims_sorted) and sims_sorted[i] is not None else 0.0
+            similarity_val = sims[i] if i < len(sims) and sims[i] is not None else 0.0
             try:
                 similarity_float = float(similarity_val)
                 if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:

@@ -19,6 +19,11 @@ RDKIT_ENABLED = os.getenv("RDKIT_ENABLED", "true").lower() == "true"
 DATA_DIR = os.getenv("DATA_DIR", "data")
 METADATA_PATH = os.path.join(DATA_DIR, "metadata.json")
 
+# Model / fingerprint artifacts
+CKPT_PATH = os.getenv("CKPT_PATH", os.path.join(DATA_DIR, "best.ckpt"))
+PARAMS_PATH = os.getenv("PARAMS_PATH", os.path.join(DATA_DIR, "params.json"))
+RETRIEVAL_PATH = os.getenv("RETRIEVAL_PATH", os.path.join(DATA_DIR, "retrieval.pkl"))
+
 # Server
 # Port configuration: Use BACKEND_PORT from root .env file (single source of truth)
 PORT = int(os.getenv("BACKEND_PORT", "5000"))

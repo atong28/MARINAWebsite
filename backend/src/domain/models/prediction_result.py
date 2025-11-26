@@ -13,7 +13,24 @@ class ResultCard(BaseModel):
     """Single result card in prediction response"""
     index: int = Field(..., description="Database index of the molecule")
     smiles: str = Field(..., description="SMILES string of the molecule")
-    similarity: float = Field(..., ge=0.0, le=1.0, description="Tanimoto similarity score")
+    similarity: float = Field(
+        ...,
+        ge=0.0,
+        le=1.0,
+        description="Primary similarity score (kept for backward compatibility, currently cosine)",
+    )
+    cosine_similarity: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Cosine similarity score between query and retrieval fingerprint",
+    )
+    tanimoto_similarity: Optional[float] = Field(
+        None,
+        ge=0.0,
+        le=1.0,
+        description="Tanimoto similarity score between query and retrieval fingerprint",
+    )
     svg: Optional[str] = Field(None, description="Enhanced SVG representation with highlighting")
     plain_svg: Optional[str] = Field(None, description="Plain SVG representation without highlighting")
     name: Optional[str] = Field(None, description="Primary name of the molecule")
@@ -40,4 +57,8 @@ class SmilesSearchResponse(BaseModel):
     offset: int = Field(default=0, ge=0, description="Pagination offset")
     limit: int = Field(..., ge=0, description="Pagination limit")
     query_smiles: str = Field(..., description="The SMILES string that was searched")
+    query_fp: Optional[List[float]] = Field(
+        None,
+        description="Fingerprint vector for the query SMILES (for downstream analysis)",
+    )
 

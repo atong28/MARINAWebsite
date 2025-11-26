@@ -119,18 +119,7 @@ def collate(batch):
     """
     logger = logging.getLogger(__name__)
     
-    logger.info(f"Collate called with batch size: {len(batch)}")
     dicts, fps = zip(*batch)
-    
-    # Debug the input dictionaries
-    for i, d in enumerate(dicts):
-        logger.info(f"  Sample {i}: {list(d.keys())}")
-        for k, v in d.items():
-            if isinstance(v, torch.Tensor):
-                logger.info(f"    {k}: tensor shape {v.shape}, dtype {v.dtype}")
-                logger.info(str(v)) 
-            else:
-                logger.info(f"    {k}: {type(v)} = {v}")
     
     batch_inputs = {}
 
@@ -190,17 +179,8 @@ def collate(batch):
     # 4) Stack your fingerprints
     batch_fps = torch.stack(fps, dim=0)
     
-    # Debug the final batch
-    logger.info(f"Final batch_inputs keys: {list(batch_inputs.keys())}")
-    for k, v in batch_inputs.items():
-        if isinstance(v, torch.Tensor):
-            logger.info(f"  {k}: tensor shape {v.shape}, dtype {v.dtype}")
-        else:
-            logger.info(f"  {k}: {type(v)} = {v}")
-    
     if not batch_inputs:
         logger.warning("WARNING: batch_inputs is empty!")
-    
     return batch_inputs, batch_fps
 
 class MARINADataModule(pl.LightningDataModule):

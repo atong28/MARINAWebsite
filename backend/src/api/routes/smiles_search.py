@@ -14,6 +14,7 @@ from src.services.result_builder import build_result_card
 from src.domain.ranker import RankingSet
 from src.domain.drawing.draw import compute_bit_environments_batch
 from src.domain.fingerprint.fp_loader import EntropyFPLoader
+from src.domain.fingerprint.fp_utils import tanimoto_similarity
 from src.config import MOLECULE_IMG_SIZE, MAX_TOP_K
 from src.api.middleware.rate_limit import get_limiter
 
@@ -37,9 +38,9 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
         )
     
     # Validate k
-    k = data.k
-    if k > MAX_TOP_K:
-        k = MAX_TOP_K
+    requested_k = data.k
+    if requested_k > MAX_TOP_K:
+        requested_k = MAX_TOP_K
     
     try:
         smiles = data.smiles.strip()
@@ -49,8 +50,17 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
                 detail="SMILES string cannot be empty"
             )
         
-        logger.info(f"SMILES search for: {smiles} with k={k}")
+        logger.info(f"SMILES search for: {smiles} with k={requested_k}")
         
+        # Validate MW filter bounds (one-sided filters allowed)
+        mw_min = data.mw_min
+        mw_max = data.mw_max
+        if mw_min is not None and mw_max is not None and mw_min > mw_max:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="mw_min cannot be greater than mw_max",
+            )
+
         # Get fingerprint for SMILES
         fp_loader = model_service.get_fp_loader()
         if fp_loader is None:
@@ -67,7 +77,7 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
             )
         
         # Convert to tensor
-        pred = torch.tensor(fp, dtype=torch.float)
+        pred = torch.tensor(fp, dtype=torch.float32)
         
         # Get rankingset
         rankingset = model_service.get_rankingset()
@@ -80,16 +90,30 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
         # Use RankingSet to get results
         ranker = RankingSet(store=rankingset, metric="cosine")
         
-        # Get similarity scores and indices together
-        sims, idxs = ranker.retrieve_with_scores(pred.unsqueeze(0), n=k)
-        sims_sorted, idxs_sorted = torch.topk(sims.squeeze(), k=k, dim=0)
+        # Get similarity scores and indices together.
+        # Always retrieve up to MAX_TOP_K candidates so we can apply MW filtering
+        # server-side without needing a second retrieval pass.
+        sims, idxs = ranker.retrieve_with_scores(pred.unsqueeze(0), n=MAX_TOP_K)
+        sims = sims.squeeze()
+        idxs = idxs.squeeze()
         
         # Build results
         results = []
         metadata_service = MetadataService.instance()
         molecule_renderer = MoleculeRenderer.instance()
         
-        for i, idx in enumerate(idxs.squeeze().tolist()):
+        query_tensor = torch.tensor(fp, dtype=torch.float32)
+
+        def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
+          vec = torch.zeros(length, dtype=torch.float32)
+          if not indices:
+              return vec
+          for j in indices:
+              if 0 <= j < length:
+                  vec[j] = 1.0
+          return vec
+
+        for i, idx in enumerate(idxs.tolist()):
             entry = metadata_service.get_entry(idx)
             if not entry:
                 continue
@@ -98,9 +122,12 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
             if not result_smiles:
                 continue
             
+            # Apply MW filter if configured
+            if not metadata_service.within_mw_range(idx, mw_min=mw_min, mw_max=mw_max):
+                continue
+
             # Render molecule
             try:
-                query_tensor = torch.tensor(fp, dtype=torch.float32)
                 enhanced_svg = molecule_renderer.render(
                     result_smiles, 
                     predicted_fp=query_tensor, 
@@ -123,22 +150,17 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
                 plain_svg = None
             
             # Similarity (clamped to [0.0, 1.0])
-            similarity_val = sims_sorted[i] if i < len(sims_sorted) and sims_sorted[i] is not None else 0.0
+            similarity_val = sims[i] if i < len(sims) and sims[i] is not None else 0.0
             try:
-                similarity_float = float(similarity_val)
-                if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:
-                    similarity_float = 0.0
+                cosine_sim = float(similarity_val)
+                if not isinstance(cosine_sim, (int, float)) or cosine_sim != cosine_sim:
+                    cosine_sim = 0.0
             except (ValueError, TypeError):
-                similarity_float = 0.0
+                cosine_sim = 0.0
 
             # Ensure similarity is always in [0.0, 1.0] before returning
-            similarity_float = max(0.0, min(1.0, similarity_float))
-            
-            # Build card
-            card = build_result_card(idx, entry, similarity_float, enhanced_svg)
-            if plain_svg:
-                card['plain_svg'] = plain_svg
-            
+            cosine_sim = max(0.0, min(1.0, cosine_sim))
+
             # Get retrieved molecule fingerprint indices
             retrieved_indices = []
             try:
@@ -154,7 +176,28 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
                         retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
             except Exception as e:
                 logger.warning(f"Failed to get retrieved indices: {e}")
-            
+
+            # Compute Tanimoto similarity between query fingerprint and retrieved vector
+            tanimoto_sim = 0.0
+            try:
+                if retrieved_indices:
+                    retrieved_vec = _dense_from_indices(query_tensor.numel(), retrieved_indices)
+                    tanimoto_sim = tanimoto_similarity(query_tensor, retrieved_vec)
+            except Exception as e:
+                logger.warning(f"Failed to compute Tanimoto similarity for idx {idx}: {e}")
+
+            # Build card with both cosine and Tanimoto similarities
+            card = build_result_card(
+                idx,
+                entry,
+                cosine_sim,
+                enhanced_svg,
+                cosine_similarity=cosine_sim,
+                tanimoto_similarity=tanimoto_sim,
+            )
+            if plain_svg:
+                card['plain_svg'] = plain_svg
+
             card['retrieved_molecule_fp_indices'] = retrieved_indices
             
             # Compute bit environments
@@ -169,6 +212,10 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
                 card['bit_environments'] = {}
             
             results.append(card)
+
+            # Stop once we've collected the requested number of MW-filtered results
+            if len(results) >= requested_k:
+                break
         
         # Pagination
         offset = 0
@@ -180,7 +227,8 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
             total_count=len(results),
             offset=offset,
             limit=limit,
-            query_smiles=smiles
+            query_smiles=smiles,
+            query_fp=query_tensor.tolist(),
         )
         
     except HTTPException:

@@ -13,6 +13,8 @@ from src.services.molecule_renderer import MoleculeRenderer
 from src.services.result_builder import build_result_card
 from src.domain.predictor import predict_from_raw
 from src.domain.drawing.draw import compute_bit_environments_batch
+from src.domain.fingerprint.fp_loader import EntropyFPLoader
+from src.domain.fingerprint.fp_utils import tanimoto_similarity
 from src.config import MOLECULE_IMG_SIZE, MAX_TOP_K
 from src.api.middleware.rate_limit import get_limiter
 
@@ -46,11 +48,20 @@ async def predict(request: Request, data: PredictRequest):
         )
     
     # Validate k
-    k = data.k
-    if k > MAX_TOP_K:
-        k = MAX_TOP_K
+    requested_k = data.k
+    if requested_k > MAX_TOP_K:
+        requested_k = MAX_TOP_K
     
     try:
+        # Validate MW filter bounds (one-sided filters allowed)
+        mw_min = data.mw_min
+        mw_max = data.mw_max
+        if mw_min is not None and mw_max is not None and mw_min > mw_max:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="mw_min cannot be greater than mw_max",
+            )
+
         # Convert request to raw input format
         raw_data = {}
         if data.raw.hsqc:
@@ -64,8 +75,10 @@ async def predict(request: Request, data: PredictRequest):
         if data.raw.mw:
             raw_data['mw'] = data.raw.mw
         
-        # Run prediction
-        out = predict_from_raw(raw_data, k=k)
+        # Run prediction. Always retrieve up to MAX_TOP_K candidates so we can
+        # apply MW filtering server-side without additional retrieval passes,
+        # but later cap to the requested_k after filtering.
+        out = predict_from_raw(raw_data, k=MAX_TOP_K)
         
         if not isinstance(out, tuple) or len(out) < 2:
             logger.error(f"Unexpected predictor output: {out}")
@@ -75,7 +88,8 @@ async def predict(request: Request, data: PredictRequest):
             )
         
         scores, indices = out[0], out[1]
-        pred_fp = out[2] if len(out) > 2 else None
+        # Third element is the sigmoid-activated prediction probabilities
+        pred_prob = out[2] if len(out) > 2 else None
         
         # Build results
         results = []
@@ -83,6 +97,19 @@ async def predict(request: Request, data: PredictRequest):
         molecule_renderer = MoleculeRenderer.instance()
         fp_loader = model_service.get_fp_loader()
         
+        # Precompute predicted fingerprint tensor once for similarity/overlay and Tanimoto.
+        # Use sigmoid-activated probabilities so both sides are in [0, 1].
+        pred_tensor = torch.tensor(pred_prob, dtype=torch.float32) if pred_prob is not None else None
+
+        def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
+          vec = torch.zeros(length, dtype=torch.float32)
+          if not indices:
+              return vec
+          for j in indices:
+              if 0 <= j < length:
+                  vec[j] = 1.0
+          return vec
+
         for i, idx in enumerate(indices):
             entry = metadata_service.get_entry(idx)
             if not entry:
@@ -91,10 +118,13 @@ async def predict(request: Request, data: PredictRequest):
             result_smiles = metadata_service.get_smiles(idx)
             if not result_smiles:
                 continue
-            
+
+            # Apply MW filter if configured
+            if not metadata_service.within_mw_range(idx, mw_min=mw_min, mw_max=mw_max):
+                continue
+
             # Render molecule
             try:
-                pred_tensor = torch.tensor(pred_fp, dtype=torch.float32) if pred_fp is not None else None
                 enhanced_svg = molecule_renderer.render(
                     result_smiles, 
                     predicted_fp=pred_tensor, 
@@ -119,19 +149,14 @@ async def predict(request: Request, data: PredictRequest):
             # Similarity (clamped to [0.0, 1.0])
             similarity_val = scores[i] if i < len(scores) and scores[i] is not None else 0.0
             try:
-                similarity_float = float(similarity_val)
-                if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:
-                    similarity_float = 0.0
+                cosine_sim = float(similarity_val)
+                if not isinstance(cosine_sim, (int, float)) or cosine_sim != cosine_sim:
+                    cosine_sim = 0.0
             except (ValueError, TypeError):
-                similarity_float = 0.0
+                cosine_sim = 0.0
 
             # Ensure similarity is always in [0.0, 1.0] before returning
-            similarity_float = max(0.0, min(1.0, similarity_float))
-            
-            # Build card
-            card = build_result_card(idx, entry, similarity_float, enhanced_svg)
-            if plain_svg:
-                card['plain_svg'] = plain_svg
+            cosine_sim = max(0.0, min(1.0, cosine_sim))
             
             # Get retrieved molecule fingerprint indices
             retrieved_indices = []
@@ -149,7 +174,28 @@ async def predict(request: Request, data: PredictRequest):
                         retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
             except Exception as e:
                 logger.warning(f"Failed to get retrieved indices: {e}")
-            
+
+            # Compute Tanimoto similarity using retrieved indices (no Fragments)
+            tanimoto_sim = 0.0
+            try:
+                if pred_tensor is not None and retrieved_indices:
+                    retrieved_vec = _dense_from_indices(pred_tensor.numel(), retrieved_indices)
+                    tanimoto_sim = tanimoto_similarity(pred_tensor, retrieved_vec)
+            except Exception as e:
+                logger.warning(f"Failed to compute Tanimoto similarity for idx {idx}: {e}")
+
+            # Build card with both cosine and Tanimoto similarities
+            card = build_result_card(
+                idx,
+                entry,
+                cosine_sim,
+                enhanced_svg,
+                cosine_similarity=cosine_sim,
+                tanimoto_similarity=tanimoto_sim,
+            )
+            if plain_svg:
+                card['plain_svg'] = plain_svg
+
             card['retrieved_molecule_fp_indices'] = retrieved_indices
             
             # Compute bit environments
@@ -164,6 +210,9 @@ async def predict(request: Request, data: PredictRequest):
                 card['bit_environments'] = {}
             
             results.append(card)
+            # Stop once we've collected the requested number of MW-filtered results
+            if len(results) >= requested_k:
+                break
         
         # Pagination
         offset = 0
@@ -175,7 +224,7 @@ async def predict(request: Request, data: PredictRequest):
             total_count=len(results),
             offset=offset,
             limit=limit,
-            pred_fp=pred_fp
+            pred_fp=pred_prob
         )
         
     except HTTPException:

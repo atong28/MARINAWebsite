@@ -2,6 +2,7 @@ from typing import Optional, Dict, Any, List
 from pydantic import BaseModel, Field
 
 from .spectral_data import SpectralDataInput
+from .prediction_result import ResultCard as ResultCardModel
 
 
 class AnalysisRequest(BaseModel):
@@ -47,4 +48,15 @@ class AblationResponse(BaseModel):
     similarity_map: Optional[str] = Field(None, description="Base64-encoded similarity map image")
     bit_environments: Dict[int, Dict[str, Any]] = Field(default_factory=dict, description="Bit environments for active fingerprint bits")
     change_overlay_svg: Optional[str] = Field(None, description="SVG string showing gained and lost fingerprint bit overlays")
+
+
+class CustomSmilesCardRequest(BaseModel):
+    """Request model for /custom-smiles-card endpoint"""
+    smiles: str = Field(..., min_length=1, description="Custom SMILES string to decorate")
+    reference_fp: List[float] = Field(..., description="Reference fingerprint (e.g., predicted or query fingerprint)")
+
+
+class CustomSmilesCardResponse(BaseModel):
+    """Response model for /custom-smiles-card endpoint"""
+    result: ResultCardModel = Field(..., description="Result card for the custom SMILES")
 

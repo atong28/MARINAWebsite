@@ -11,6 +11,7 @@ from src.services.metadata_service import MetadataService
 from src.services.molecule_renderer import MoleculeRenderer
 from src.services.result_builder import build_result_card
 from src.domain.ranker import RankingSet
+from src.domain.fingerprint.fp_utils import tanimoto_similarity
 from src.config import MOLECULE_IMG_SIZE, MAX_TOP_K
 from src.api.middleware.rate_limit import get_limiter
 
@@ -100,6 +101,15 @@ async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest)
         metadata_service = MetadataService.instance()
         molecule_renderer = MoleculeRenderer.instance()
         fp_loader = model_service.get_fp_loader()
+
+        def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
+          vec = torch.zeros(length, dtype=torch.float32)
+          if not indices:
+              return vec
+          for j in indices:
+              if 0 <= j < length:
+                  vec[j] = 1.0
+          return vec
         
         for i, idx in enumerate(idxs.tolist()):
             entry = metadata_service.get_entry(idx)
@@ -125,14 +135,49 @@ async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest)
             # Similarity
             similarity_val = sims[i] if i < len(sims) and sims[i] is not None else 0.0
             try:
-                similarity_float = float(similarity_val)
-                if not isinstance(similarity_float, (int, float)) or similarity_float != similarity_float:
-                    similarity_float = 0.0
+                cosine_sim = float(similarity_val)
+                if not isinstance(cosine_sim, (int, float)) or cosine_sim != cosine_sim:
+                    cosine_sim = 0.0
             except (ValueError, TypeError):
-                similarity_float = 0.0
-            
+                cosine_sim = 0.0
+
+            cosine_sim = max(0.0, min(1.0, cosine_sim))
+
+            # Build retrieved indices from rankingset row for this idx
+            retrieved_indices: list[int] = []
+            try:
+                if rankingset is not None:
+                    if rankingset.layout == torch.sparse_csr:
+                        row_start = rankingset.crow_indices()[idx]
+                        row_end = rankingset.crow_indices()[idx + 1]
+                        if row_start < row_end:
+                            col_indices = rankingset.col_indices()[row_start:row_end]
+                            retrieved_indices = col_indices.cpu().tolist()
+                    else:
+                        row_tensor = rankingset[idx].cpu()
+                        retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
+            except Exception as e:
+                logger.warning(f"Failed to get retrieved indices for secondary retrieval idx {idx}: {e}")
+
+            # Tanimoto between difference fingerprint and retrieved vector
+            tanimoto_sim = 0.0
+            try:
+                if retrieved_indices:
+                    retrieved_vec = _dense_from_indices(difference_prob.numel(), retrieved_indices)
+                    tanimoto_sim = tanimoto_similarity(difference_prob, retrieved_vec)
+            except Exception as e:
+                logger.warning(f"Failed to compute Tanimoto similarity for idx {idx}: {e}")
+
             # Build card
-            card = build_result_card(idx, entry, similarity_float, enhanced_svg)
+            card = build_result_card(
+                idx,
+                entry,
+                cosine_sim,
+                enhanced_svg,
+                cosine_similarity=cosine_sim,
+                tanimoto_similarity=tanimoto_sim,
+            )
+            card['retrieved_molecule_fp_indices'] = retrieved_indices
             results.append(card)
         
         # Pagination

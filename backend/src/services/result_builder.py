@@ -11,7 +11,10 @@ def build_result_card(
     idx: int, 
     entry: Dict, 
     similarity: float, 
-    svg: Optional[str]
+    svg: Optional[str],
+    *,
+    cosine_similarity: Optional[float] = None,
+    tanimoto_similarity: Optional[float] = None,
 ) -> Dict:
     """Build a result card dictionary from metadata entry."""
     # Choose display SMILES
@@ -65,10 +68,16 @@ def build_result_card(
     if npmrd and npmrd.get('npmrd_id'):
         database_links.npmrd = f"https://np-mrd.org/natural_products/{npmrd['npmrd_id']}"
 
+    primary_similarity = similarity if similarity is not None else 0.0
+    if cosine_similarity is not None:
+        primary_similarity = cosine_similarity
+
     return {
         'index': idx,
         'smiles': smiles,
-        'similarity': float(similarity) if similarity is not None else 0.0,
+        'similarity': float(primary_similarity),
+        'cosine_similarity': float(cosine_similarity) if cosine_similarity is not None else float(primary_similarity),
+        'tanimoto_similarity': float(tanimoto_similarity) if tanimoto_similarity is not None else None,
         'svg': svg,
         'name': primary_name,
         'primary_link': primary_link,

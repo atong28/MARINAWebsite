@@ -7,19 +7,45 @@ interface ResultCardProps {
   position: number
   onAnalyze: () => void
   showAnalyzeButton?: boolean
+  isCustom?: boolean
+  onRemove?: () => void
 }
 
-function ResultCard({ result, position, onAnalyze, showAnalyzeButton = true }: ResultCardProps) {
+function ResultCard({
+  result,
+  position,
+  onAnalyze,
+  showAnalyzeButton = true,
+  isCustom = false,
+  onRemove,
+}: ResultCardProps) {
   const { database_links } = result
   const hasDatabaseLinks = database_links && (
     database_links.coconut || database_links.lotus || database_links.npmrd
   )
+
+  const cosine = typeof result.cosine_similarity === 'number'
+    ? result.cosine_similarity
+    : result.similarity
+  const tanimoto = typeof result.tanimoto_similarity === 'number'
+    ? result.tanimoto_similarity
+    : undefined
+  const positionLabel = position > 0 ? `#${position}` : 'Custom'
   
   return (
     <div className="result-card">
       <div className="result-top-line">
-        <span className="result-position">#{position}</span>
-        <span className="similarity-badge">{(result.similarity * 100).toFixed(1)}%</span>
+        <span className="result-position">{positionLabel}</span>
+        <div className="similarity-badges">
+          <span className="similarity-badge cosine-badge">
+            C:{cosine.toFixed(3)}
+          </span>
+          {typeof tanimoto === 'number' && (
+            <span className="similarity-badge tanimoto-badge">
+              T:{tanimoto.toFixed(3)}
+            </span>
+          )}
+        </div>
       </div>
       
       <div className="result-name-section">
@@ -35,7 +61,13 @@ function ResultCard({ result, position, onAnalyze, showAnalyzeButton = true }: R
       
       <div className="result-footer">
         <div className="database-links">
-          {hasDatabaseLinks ? (
+          {isCustom ? (
+            onRemove && (
+              <button className="custom-remove-btn" onClick={onRemove}>
+                ✕ Remove
+              </button>
+            )
+          ) : hasDatabaseLinks ? (
             <>
               {database_links.coconut && (
                 <a
@@ -65,17 +97,17 @@ function ResultCard({ result, position, onAnalyze, showAnalyzeButton = true }: R
                   className="database-btn npmrd"
                 >
                   View on NPMRD
-          </a>
-        )}
+                </a>
+              )}
             </>
           ) : (
             <span className="local-dataset-note">Local dataset only</span>
           )}
         </div>
         {showAnalyzeButton && (
-        <button onClick={onAnalyze} className="analyze-btn">
-          Analyze
-        </button>
+          <button onClick={onAnalyze} className="analyze-btn">
+            Analyze
+          </button>
         )}
       </div>
     </div>

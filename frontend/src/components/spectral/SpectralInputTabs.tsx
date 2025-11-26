@@ -1,6 +1,7 @@
 import { useMainPageStore } from '../../store/store'
 import UnifiedSpreadsheetTable from '../spreadsheet/UnifiedSpreadsheetTable'
 import './SpectralInputTabs.css'
+import RetrievalMWFilter from './RetrievalMWFilter'
 
 interface SpectralInputTabsProps {
   onValidationChange?: (summary: { hsqcInvalid: number; hInvalid: number; cInvalid: number; msInvalid: number; anyInvalid: boolean }) => void
@@ -13,11 +14,14 @@ function SpectralInputTabs({ onValidationChange }: SpectralInputTabsProps) {
     c_nmr, 
     mass_spec, 
     mw, 
+    retrievalMwMin,
+    retrievalMwMax,
     setHSQC, 
     setHNMR, 
     setCNMR, 
     setMassSpec, 
-    setMW 
+    setMW,
+    setRetrievalMwRange,
   } = useMainPageStore()
   
   return (
@@ -59,6 +63,12 @@ function SpectralInputTabs({ onValidationChange }: SpectralInputTabsProps) {
           />
         </label>
       </div>
+
+      <RetrievalMWFilter
+        minMw={retrievalMwMin}
+        maxMw={retrievalMwMax}
+        onChange={setRetrievalMwRange}
+      />
     </div>
   )
 }

@@ -20,12 +20,16 @@ export interface SpectralDataInput {
 export interface PredictRequest {
   raw: SpectralDataInput
   k?: number
+  mw_min?: number
+  mw_max?: number
 }
 
 export interface ResultCard {
   index: number
   smiles: string
   similarity: number
+  cosine_similarity?: number
+  tanimoto_similarity?: number
   svg?: string
   plain_svg?: string
   name?: string
@@ -51,6 +55,8 @@ export interface PredictResponse {
 export interface SmilesSearchRequest {
   smiles: string
   k?: number
+  mw_min?: number
+  mw_max?: number
 }
 
 export interface SmilesSearchResponse {
@@ -59,6 +65,7 @@ export interface SmilesSearchResponse {
   offset: number
   limit: number
   query_smiles: string
+  query_fp?: number[]
 }
 
 export interface AnalysisRequest {
@@ -89,6 +96,15 @@ export interface SecondaryRetrievalResponse {
   results: ResultCard[]
   total_count: number
   difference_fp?: number[]
+}
+
+export interface CustomSmilesCardRequest {
+  smiles: string
+  reference_fp: number[]
+}
+
+export interface CustomSmilesCardResponse {
+  result: ResultCard
 }
 
 export interface AblationRequest {
@@ -162,6 +178,12 @@ export const api = {
   
   secondaryRetrieval: (data: SecondaryRetrievalRequest) =>
     fetchJson<SecondaryRetrievalResponse>('/secondary-retrieval', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  customSmilesCard: (data: CustomSmilesCardRequest) =>
+    fetchJson<CustomSmilesCardResponse>('/custom-smiles-card', {
       method: 'POST',
       body: JSON.stringify(data),
     }),

@@ -1,0 +1,33 @@
+.retrieval-mw-filter {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin-top: 8px;
+  font-size: 0.9em;
+}
+
+.retrieval-mw-filter__label {
+  font-weight: 500;
+}
+
+.retrieval-mw-filter__inputs {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.retrieval-mw-filter__inputs input {
+  width: 100px;
+  padding: 4px 6px;
+}
+
+.retrieval-mw-filter__dash {
+  color: #666;
+}
+
+.retrieval-mw-filter__hint {
+  color: #666;
+  font-size: 0.8em;
+}
+
+

@@ -26,6 +26,12 @@ interface MainPageState {
   // Results
   results: ResultCard[]
   predictedFp: number[] | null
+  queryFp: number[] | null
+  customResults: ResultCard[]
+
+  // Retrieval MW filter
+  retrievalMwMin: number | null
+  retrievalMwMax: number | null
   
   // Analysis source
   analysisSource: 'prediction' | 'smiles-search' | null
@@ -37,8 +43,11 @@ interface MainPageState {
   setMassSpec: (data: number[]) => void
   setMW: (mw: number | null) => void
   setSmilesInput: (smiles: string) => void
-  setResults: (results: ResultCard[], predictedFp?: number[] | null) => void
+  setResults: (results: ResultCard[], predictedFp?: number[] | null, queryFp?: number[] | null) => void
   setAnalysisSource: (source: 'prediction' | 'smiles-search' | null) => void
+  setRetrievalMwRange: (min: number | null, max: number | null) => void
+  addCustomResult: (result: ResultCard) => void
+  removeCustomResult: (index: number) => void
   clearInputs: () => void
 }
 
@@ -85,6 +94,10 @@ export const useMainPageStore = create<MainPageState>((set) => ({
   smilesInput: '',
   results: [],
   predictedFp: null,
+  queryFp: null,
+  customResults: [],
+  retrievalMwMin: null,
+  retrievalMwMax: null,
   analysisSource: null,
   
   setHSQC: (data) => set({ hsqc: data }),
@@ -93,8 +106,20 @@ export const useMainPageStore = create<MainPageState>((set) => ({
   setMassSpec: (data) => set({ mass_spec: data }),
   setMW: (mw) => set({ mw }),
   setSmilesInput: (smiles) => set({ smilesInput: smiles }),
-  setResults: (results, predictedFp) => set({ results, predictedFp }),
+  setResults: (results, predictedFp, queryFp) =>
+    set({
+      results,
+      predictedFp: predictedFp ?? null,
+      queryFp: queryFp ?? null,
+    }),
   setAnalysisSource: (source) => set({ analysisSource: source }),
+  setRetrievalMwRange: (min, max) => set({ retrievalMwMin: min, retrievalMwMax: max }),
+  addCustomResult: (result) =>
+    set((state) => ({ customResults: [...state.customResults, result] })),
+  removeCustomResult: (index) =>
+    set((state) => ({
+      customResults: state.customResults.filter((_, i) => i !== index),
+    })),
   clearInputs: () => set({
     hsqc: [],
     h_nmr: [],
@@ -102,6 +127,9 @@ export const useMainPageStore = create<MainPageState>((set) => ({
     mass_spec: [],
     mw: null,
     smilesInput: '',
+    retrievalMwMin: null,
+    retrievalMwMax: null,
+    customResults: [],
   }),
 }))
 

@@ -23,13 +23,26 @@
   font-size: 1.1em;
 }
 
+.similarity-badges {
+  display: flex;
+  gap: 6px;
+}
+
 .similarity-badge {
   background: #007bff;
   color: white;
-  padding: 4px 12px;
+  padding: 4px 10px;
   border-radius: 12px;
   font-weight: bold;
-  font-size: 0.9em;
+  font-size: 0.8em;
+}
+
+.similarity-badge.cosine-badge {
+  background: #007bff;
+}
+
+.similarity-badge.tanimoto-badge {
+  background: #6f42c1;
 }
 
 .result-name-section {
@@ -114,6 +127,20 @@
   color: #6c757d;
   font-size: 0.9em;
   font-style: italic;
+}
+
+.custom-remove-btn {
+  padding: 6px 12px;
+  background: #dc3545;
+  color: #fff;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.85em;
+  cursor: pointer;
+}
+
+.custom-remove-btn:hover {
+  background: #c82333;
 }
 
 .analyze-btn {

@@ -1,12 +1,14 @@
 import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { usePredict, useSmilesSearch, useHealth } from '../services/api'
+import { usePredict, useSmilesSearch, useHealth, api } from '../services/api'
 import { useMainPageStore } from '../store/store'
 import { getAvailableExamples, loadExample, type ExampleMetadata } from '../services/exampleLoader'
 import { ROUTES } from '../routes'
 import SpectralInputTabs from '../components/spectral/SpectralInputTabs'
 import SmilesSearchBox from '../components/spectral/SmilesSearchBox'
+import CustomSmilesBox from '../components/spectral/CustomSmilesBox'
 import ResultsGrid from '../components/results/ResultsGrid'
+import CustomResultsGrid from '../components/results/CustomResultsGrid'
 import StatusIndicator from '../components/common/StatusIndicator'
 import './MainPage.css'
 
@@ -37,18 +39,26 @@ function MainPage() {
     setCNMR,
     setMassSpec,
     setMW,
+    retrievalMwMin,
+    retrievalMwMax,
+    customResults,
+    addCustomResult,
+    removeCustomResult,
   } = useMainPageStore()
+  const [customSmiles, setCustomSmiles] = useState('')
+  const [customResultError, setCustomResultError] = useState<string | null>(null)
+  const [isCustomLoading, setIsCustomLoading] = useState(false)
   
   const { data: health } = useHealth()
   const predictMutation = usePredict({
     onSuccess: (data) => {
-      setResults(data.results, data.pred_fp || null)
+      setResults(data.results, data.pred_fp || null, null)
       setAnalysisSource('prediction')
     },
   })
   const smilesSearchMutation = useSmilesSearch({
     onSuccess: (data) => {
-      setResults(data.results)
+      setResults(data.results, null, data.query_fp || null)
       setAnalysisSource('smiles-search')
     },
   })
@@ -91,19 +101,39 @@ function MainPage() {
       raw.mw = mw
     }
     
-    const payload = { raw, k }
+    const payload: any = { raw, k }
+    if (retrievalMwMin !== null && retrievalMwMin !== undefined && !Number.isNaN(retrievalMwMin) && isFinite(retrievalMwMin)) {
+      payload.mw_min = retrievalMwMin
+    }
+    if (retrievalMwMax !== null && retrievalMwMax !== undefined && !Number.isNaN(retrievalMwMax) && isFinite(retrievalMwMax)) {
+      payload.mw_max = retrievalMwMax
+    }
     predictMutation.mutate(payload)
   }
   
   const handleSmilesSearch = () => {
     if (!smilesInput.trim()) return
-    smilesSearchMutation.mutate({ smiles: smilesInput.trim(), k })
+    const payload: any = { smiles: smilesInput.trim(), k }
+    if (retrievalMwMin !== null && retrievalMwMin !== undefined && !Number.isNaN(retrievalMwMin) && isFinite(retrievalMwMin)) {
+      payload.mw_min = retrievalMwMin
+    }
+    if (retrievalMwMax !== null && retrievalMwMax !== undefined && !Number.isNaN(retrievalMwMax) && isFinite(retrievalMwMax)) {
+      payload.mw_max = retrievalMwMax
+    }
+    smilesSearchMutation.mutate(payload)
   }
   
   const handleAnalyze = (index: number) => {
     const result = results[index]
     if (!result) return
     navigate(ROUTES.ANALYSIS, { state: { result, index } })
+  }
+
+  const handleCustomAnalyze = (index: number) => {
+    const result = customResults[index]
+    if (!result) return
+    // Index is not meaningful for custom results, but AnalysisPage only needs the result itself.
+    navigate(ROUTES.ANALYSIS, { state: { result, index: 0 } })
   }
 
   const handleLoadExample = async () => {
@@ -236,7 +266,60 @@ function MainPage() {
       )}
       
       {results.length > 0 && (
-        <ResultsGrid results={results} onAnalyze={handleAnalyze} />
+        <>
+          <div className="smiles-input-section custom-smiles-section">
+            <CustomSmilesBox value={customSmiles} onChange={setCustomSmiles} />
+            <div className="controls">
+              <button
+                onClick={async () => {
+                  setCustomResultError(null)
+                  const trimmed = customSmiles.trim()
+                  if (!trimmed) return
+                  try {
+                    setIsCustomLoading(true)
+                    const state = useMainPageStore.getState()
+                    const refFp =
+                      state.analysisSource === 'prediction'
+                        ? state.predictedFp
+                        : state.queryFp
+                    if (!refFp || refFp.length === 0) {
+                      setCustomResultError('No reference fingerprint available from the current session.')
+                      return
+                    }
+                    const response = await api.customSmilesCard({
+                      smiles: trimmed,
+                      reference_fp: refFp,
+                    })
+                    if (response.result) {
+                      addCustomResult(response.result)
+                    }
+                  } catch (error) {
+                    const message = error instanceof Error ? error.message : 'Failed to fetch custom SMILES result'
+                    setCustomResultError(message)
+                  } finally {
+                    setIsCustomLoading(false)
+                  }
+                }}
+                disabled={isCustomLoading}
+              >
+                {isCustomLoading ? 'Adding...' : 'Add Custom Result'}
+              </button>
+            </div>
+            {customResultError && (
+              <div className="error-message" style={{ marginTop: 10 }}>
+                {customResultError}
+              </div>
+            )}
+          </div>
+
+          <CustomResultsGrid
+            results={customResults}
+            onRemove={(index) => removeCustomResult(index)}
+            onAnalyze={handleCustomAnalyze}
+          />
+
+          <ResultsGrid results={results} onAnalyze={handleAnalyze} />
+        </>
       )}
       
       {(predictMutation.error || smilesSearchMutation.error) && (

@@ -24,7 +24,7 @@ function RetrievalMWFilter({ minMw, maxMw, onChange }: RetrievalMWFilterProps) {
 
   return (
     <div className="retrieval-mw-filter">
-      <span className="retrieval-mw-filter__label">Retrieval MW Filter (g/mol):</span>
+      <span className="retrieval-mw-filter__label">Retrieval MW Filter (Da):</span>
       <div className="retrieval-mw-filter__inputs">
         <input
           type="number"

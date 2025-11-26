@@ -15,6 +15,7 @@ from src.domain.predictor import predict_from_raw
 from src.domain.drawing.draw import compute_bit_environments_batch
 from src.domain.fingerprint.fp_loader import EntropyFPLoader
 from src.domain.fingerprint.fp_utils import tanimoto_similarity
+from src.domain.ranker import RankingSet, filter_rankingset_rows
 from src.config import MOLECULE_IMG_SIZE, MAX_TOP_K
 from src.api.middleware.rate_limit import get_limiter
 
@@ -75,9 +76,8 @@ async def predict(request: Request, data: PredictRequest):
         if data.raw.mw:
             raw_data['mw'] = data.raw.mw
         
-        # Run prediction. Always retrieve up to MAX_TOP_K candidates so we can
-        # apply MW filtering server-side without additional retrieval passes,
-        # but later cap to the requested_k after filtering.
+        # Run prediction to obtain the sigmoid-activated prediction fingerprint.
+        # Retrieval will be handled explicitly below using a MW-prefiltered rankingset.
         out = predict_from_raw(raw_data, k=MAX_TOP_K)
         
         if not isinstance(out, tuple) or len(out) < 2:
@@ -87,9 +87,14 @@ async def predict(request: Request, data: PredictRequest):
                 detail="Unexpected predictor output"
             )
         
-        scores, indices = out[0], out[1]
         # Third element is the sigmoid-activated prediction probabilities
         pred_prob = out[2] if len(out) > 2 else None
+        if pred_prob is None:
+            logger.error("predict_from_raw did not return pred_prob as third element")
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="Predictor did not return a fingerprint vector",
+            )
         
         # Build results
         results = []
@@ -102,25 +107,54 @@ async def predict(request: Request, data: PredictRequest):
         pred_tensor = torch.tensor(pred_prob, dtype=torch.float32) if pred_prob is not None else None
 
         def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
-          vec = torch.zeros(length, dtype=torch.float32)
-          if not indices:
-              return vec
-          for j in indices:
-              if 0 <= j < length:
-                  vec[j] = 1.0
-          return vec
+            vec = torch.zeros(length, dtype=torch.float32)
+            if not indices:
+                return vec
+            for j in indices:
+                if 0 <= j < length:
+                    vec[j] = 1.0
+            return vec
 
-        for i, idx in enumerate(indices):
-            entry = metadata_service.get_entry(idx)
+        # Prefilter rankingset rows by MW so retrieval is done only over MW-valid molecules.
+        rankingset_full = model_service.get_rankingset()
+        if rankingset_full is None:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="Rankingset not available",
+            )
+
+        num_rows = rankingset_full.shape[0]
+        kept_indices: list[int] = []
+        for idx in range(num_rows):
+            if metadata_service.within_mw_range(idx, mw_min=mw_min, mw_max=mw_max):
+                kept_indices.append(idx)
+
+        if not kept_indices:
+            # No molecules satisfy MW; return empty result set
+            return PredictResponse(
+                results=[],
+                total_count=0,
+                offset=0,
+                limit=0,
+                pred_fp=pred_prob,
+            )
+
+        filtered_store = filter_rankingset_rows(rankingset_full, kept_indices)
+        ranker = RankingSet(store=filtered_store, metric="cosine")
+
+        n = min(requested_k, len(kept_indices))
+        sims, local_idxs = ranker.retrieve_with_scores(pred_tensor.unsqueeze(0), n=n)
+        sims = sims.squeeze()
+        local_idxs = local_idxs.squeeze()
+
+        for i, local_row in enumerate(local_idxs.tolist()):
+            global_idx = kept_indices[local_row]
+            entry = metadata_service.get_entry(global_idx)
             if not entry:
                 continue
             
-            result_smiles = metadata_service.get_smiles(idx)
+            result_smiles = metadata_service.get_smiles(global_idx)
             if not result_smiles:
-                continue
-
-            # Apply MW filter if configured
-            if not metadata_service.within_mw_range(idx, mw_min=mw_min, mw_max=mw_max):
                 continue
 
             # Render molecule
@@ -147,7 +181,7 @@ async def predict(request: Request, data: PredictRequest):
                 plain_svg = None
             
             # Similarity (clamped to [0.0, 1.0])
-            similarity_val = scores[i] if i < len(scores) and scores[i] is not None else 0.0
+            similarity_val = sims[i] if i < len(sims) and sims[i] is not None else 0.0
             try:
                 cosine_sim = float(similarity_val)
                 if not isinstance(cosine_sim, (int, float)) or cosine_sim != cosine_sim:
@@ -161,16 +195,16 @@ async def predict(request: Request, data: PredictRequest):
             # Get retrieved molecule fingerprint indices
             retrieved_indices = []
             try:
-                rankingset = model_service.get_rankingset()
+                rankingset = rankingset_full
                 if rankingset is not None:
                     if rankingset.layout == torch.sparse_csr:
-                        row_start = rankingset.crow_indices()[idx]
-                        row_end = rankingset.crow_indices()[idx + 1]
+                        row_start = rankingset.crow_indices()[global_idx]
+                        row_end = rankingset.crow_indices()[global_idx + 1]
                         if row_start < row_end:
                             col_indices = rankingset.col_indices()[row_start:row_end]
                             retrieved_indices = col_indices.cpu().tolist()
                     else:
-                        row_tensor = rankingset[idx].cpu()
+                        row_tensor = rankingset[global_idx].cpu()
                         retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
             except Exception as e:
                 logger.warning(f"Failed to get retrieved indices: {e}")

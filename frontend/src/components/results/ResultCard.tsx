@@ -52,7 +52,7 @@ function ResultCard({
         <h3 className="result-name">{result.name || result.smiles}</h3>
         {result.exact_mass && (
           <div className="result-exact-mass">
-            Exact Mass: {result.exact_mass.toFixed(4)} g/mol
+            Exact Mass: {result.exact_mass.toFixed(4)} Da
           </div>
         )}
       </div>

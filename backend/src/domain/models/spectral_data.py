@@ -35,7 +35,7 @@ class MassSpecData(BaseModel):
 
 class MolecularWeightData(BaseModel):
     """Molecular weight data: single scalar value"""
-    mw: float = Field(..., gt=0, description="Molecular weight in g/mol")
+    mw: float = Field(..., gt=0, description="Molecular weight in Da")
 
 
 class SpectralDataInput(BaseModel):
@@ -72,12 +72,12 @@ class PredictRequest(BaseModel):
     mw_min: Optional[float] = Field(
         None,
         gt=0,
-        description="Optional minimum molecular weight filter for retrieval (g/mol)",
+        description="Optional minimum molecular weight filter for retrieval (Da)",
     )
     mw_max: Optional[float] = Field(
         None,
         gt=0,
-        description="Optional maximum molecular weight filter for retrieval (g/mol)",
+        description="Optional maximum molecular weight filter for retrieval (Da)",
     )
 
 
@@ -88,11 +88,11 @@ class SmilesSearchRequest(BaseModel):
     mw_min: Optional[float] = Field(
         None,
         gt=0,
-        description="Optional minimum molecular weight filter for retrieval (g/mol)",
+        description="Optional minimum molecular weight filter for retrieval (Da)",
     )
     mw_max: Optional[float] = Field(
         None,
         gt=0,
-        description="Optional maximum molecular weight filter for retrieval (g/mol)",
+        description="Optional maximum molecular weight filter for retrieval (Da)",
     )
 

@@ -11,7 +11,7 @@ from src.services.model_service import ModelService
 from src.services.metadata_service import MetadataService
 from src.services.molecule_renderer import MoleculeRenderer
 from src.services.result_builder import build_result_card
-from src.domain.ranker import RankingSet
+from src.domain.ranker import RankingSet, filter_rankingset_rows
 from src.domain.drawing.draw import compute_bit_environments_batch
 from src.domain.fingerprint.fp_loader import EntropyFPLoader
 from src.domain.fingerprint.fp_utils import tanimoto_similarity
@@ -79,51 +79,63 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
         # Convert to tensor
         pred = torch.tensor(fp, dtype=torch.float32)
         
-        # Get rankingset
-        rankingset = model_service.get_rankingset()
-        if rankingset is None:
+        # Get full rankingset and prefilter rows by MW range
+        rankingset_full = model_service.get_rankingset()
+        if rankingset_full is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="Rankingset not available"
             )
         
-        # Use RankingSet to get results
-        ranker = RankingSet(store=rankingset, metric="cosine")
-        
-        # Get similarity scores and indices together.
-        # Always retrieve up to MAX_TOP_K candidates so we can apply MW filtering
-        # server-side without needing a second retrieval pass.
-        sims, idxs = ranker.retrieve_with_scores(pred.unsqueeze(0), n=MAX_TOP_K)
+        num_rows = rankingset_full.shape[0]
+        kept_indices: list[int] = []
+        for idx in range(num_rows):
+            if metadata_service.within_mw_range(idx, mw_min=mw_min, mw_max=mw_max):
+                kept_indices.append(idx)
+
+        query_tensor = torch.tensor(fp, dtype=torch.float32)
+
+        if not kept_indices:
+            # No molecules satisfy MW; return empty result set
+            return SmilesSearchResponse(
+                results=[],
+                total_count=0,
+                offset=0,
+                limit=0,
+                query_smiles=smiles,
+                query_fp=query_tensor.tolist(),
+            )
+
+        filtered_store = filter_rankingset_rows(rankingset_full, kept_indices)
+        ranker = RankingSet(store=filtered_store, metric="cosine")
+
+        n = min(requested_k, len(kept_indices))
+        sims, local_idxs = ranker.retrieve_with_scores(query_tensor.unsqueeze(0), n=n)
         sims = sims.squeeze()
-        idxs = idxs.squeeze()
+        local_idxs = local_idxs.squeeze()
         
         # Build results
         results = []
         metadata_service = MetadataService.instance()
         molecule_renderer = MoleculeRenderer.instance()
         
-        query_tensor = torch.tensor(fp, dtype=torch.float32)
-
         def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
-          vec = torch.zeros(length, dtype=torch.float32)
-          if not indices:
-              return vec
-          for j in indices:
-              if 0 <= j < length:
-                  vec[j] = 1.0
-          return vec
+            vec = torch.zeros(length, dtype=torch.float32)
+            if not indices:
+                return vec
+            for j in indices:
+                if 0 <= j < length:
+                    vec[j] = 1.0
+            return vec
 
-        for i, idx in enumerate(idxs.tolist()):
-            entry = metadata_service.get_entry(idx)
+        for i, local_row in enumerate(local_idxs.tolist()):
+            global_idx = kept_indices[local_row]
+            entry = metadata_service.get_entry(global_idx)
             if not entry:
                 continue
             
-            result_smiles = metadata_service.get_smiles(idx)
+            result_smiles = metadata_service.get_smiles(global_idx)
             if not result_smiles:
-                continue
-            
-            # Apply MW filter if configured
-            if not metadata_service.within_mw_range(idx, mw_min=mw_min, mw_max=mw_max):
                 continue
 
             # Render molecule
@@ -164,15 +176,16 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
             # Get retrieved molecule fingerprint indices
             retrieved_indices = []
             try:
+                rankingset = rankingset_full
                 if rankingset is not None:
                     if rankingset.layout == torch.sparse_csr:
-                        row_start = rankingset.crow_indices()[idx]
-                        row_end = rankingset.crow_indices()[idx + 1]
+                        row_start = rankingset.crow_indices()[global_idx]
+                        row_end = rankingset.crow_indices()[global_idx + 1]
                         if row_start < row_end:
                             col_indices = rankingset.col_indices()[row_start:row_end]
                             retrieved_indices = col_indices.cpu().tolist()
                     else:
-                        row_tensor = rankingset[idx].cpu()
+                        row_tensor = rankingset[global_idx].cpu()
                         retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
             except Exception as e:
                 logger.warning(f"Failed to get retrieved indices: {e}")

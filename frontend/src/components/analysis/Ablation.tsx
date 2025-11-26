@@ -206,7 +206,7 @@ function Ablation() {
         />
         <div className="ablation-mw-input">
           <label>
-            Molecular Weight (g/mol)
+            Molecular Weight (Da)
             <input
               type="number"
               step="0.01"

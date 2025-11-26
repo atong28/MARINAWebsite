@@ -2,9 +2,6 @@ import json
 import threading
 from typing import Any, Dict, Optional
 
-from rdkit import Chem
-from rdkit.Chem import Descriptors
-
 from src.config import METADATA_PATH
 
 class MetadataService:
@@ -51,34 +48,22 @@ class MetadataService:
 
     def get_exact_mass(self, idx: int) -> Optional[float]:
         """
-        Get or compute exact mass for a given index.
+        Get exact mass / MW for a given index.
 
-        Prefers any precomputed exact_mass field in metadata, but will fall back
-        to computing from the best-available SMILES using RDKit. Returns None
-        if mass cannot be determined.
+        Assumes each metadata entry has a root-level key \"mw\" storing
+        the molecular weight. Returns None if it cannot be determined.
         """
         entry = self.get_entry(idx)
         if not entry:
             return None
-
-        mass = entry.get("exact_mass")
+        
+        mass = entry.get("mw")
         if isinstance(mass, (int, float)):
             try:
                 return float(mass)
             except Exception:
-                pass
-
-        smiles = self.get_smiles(idx)
-        if not smiles:
-            return None
-
-        try:
-            mol = Chem.MolFromSmiles(smiles)
-            if not mol:
                 return None
-            return float(Descriptors.ExactMolWt(mol))
-        except Exception:
-            return None
+        return None
 
     def within_mw_range(
         self,

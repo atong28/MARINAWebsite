@@ -83,6 +83,15 @@ function MainPage() {
       return val !== null && val !== undefined && !Number.isNaN(val) && isFinite(val)
     })
   }
+
+  const mwInvalid =
+    (retrievalMwMin !== null && retrievalMwMin !== undefined && retrievalMwMin < 0) ||
+    (retrievalMwMax !== null && retrievalMwMax !== undefined && retrievalMwMax < 0) ||
+    (retrievalMwMin !== null &&
+      retrievalMwMax !== null &&
+      retrievalMwMin !== undefined &&
+      retrievalMwMax !== undefined &&
+      retrievalMwMin > retrievalMwMax)
   
   const handlePredict = () => {
     // Sanitize arrays by filtering out NaN values
@@ -206,8 +215,14 @@ function MainPage() {
             </label>
             <button
               onClick={handlePredict}
-              disabled={predictMutation.isPending || !health?.model_loaded || hasInvalidSpreadsheet}
-              title={hasInvalidSpreadsheet ? 'You have incomplete data in the spreadsheet.' : ''}
+              disabled={predictMutation.isPending || !health?.model_loaded || hasInvalidSpreadsheet || mwInvalid}
+              title={
+                hasInvalidSpreadsheet
+                  ? 'You have incomplete data in the spreadsheet.'
+                  : mwInvalid
+                  ? 'Invalid MW filter: ensure 0 ≤ min ≤ max.'
+                  : ''
+              }
             >
               {predictMutation.isPending ? 'Predicting...' : 'Predict Structure'}
             </button>
@@ -257,7 +272,7 @@ function MainPage() {
             </label>
             <button
               onClick={handleSmilesSearch}
-              disabled={smilesSearchMutation.isPending || !health?.model_loaded}
+              disabled={smilesSearchMutation.isPending || !health?.model_loaded || mwInvalid}
             >
               {smilesSearchMutation.isPending ? 'Searching...' : 'Search'}
             </button>

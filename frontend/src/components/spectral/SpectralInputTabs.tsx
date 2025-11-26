@@ -23,6 +23,15 @@ function SpectralInputTabs({ onValidationChange }: SpectralInputTabsProps) {
     setMW,
     setRetrievalMwRange,
   } = useMainPageStore()
+
+  const mwInvalid =
+    (retrievalMwMin !== null && retrievalMwMin !== undefined && retrievalMwMin < 0) ||
+    (retrievalMwMax !== null && retrievalMwMax !== undefined && retrievalMwMax < 0) ||
+    (retrievalMwMin !== null &&
+      retrievalMwMax !== null &&
+      retrievalMwMin !== undefined &&
+      retrievalMwMax !== undefined &&
+      retrievalMwMin > retrievalMwMax)
   
   return (
     <div className="spectral-input-tabs">
@@ -53,7 +62,7 @@ function SpectralInputTabs({ onValidationChange }: SpectralInputTabsProps) {
       
       <div className="mw-input">
         <label>
-          Molecular Weight (g/mol):
+          Molecular Weight (Da):
           <input
             type="number"
             step="0.01"
@@ -69,6 +78,11 @@ function SpectralInputTabs({ onValidationChange }: SpectralInputTabsProps) {
         maxMw={retrievalMwMax}
         onChange={setRetrievalMwRange}
       />
+      {mwInvalid && (
+        <div className="mw-error">
+          MW filter must satisfy 0 \u2264 min \u2264 max.
+        </div>
+      )}
     </div>
   )
 }

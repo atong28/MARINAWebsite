@@ -2,6 +2,7 @@ import { useEffect, useRef } from 'react'
 import { useNavigate, useLocation } from 'react-router-dom'
 import { useAnalysisPageStore, useMainPageStore } from '../store/store'
 import { useAnalyze, api } from '../services/api'
+import { ROUTES } from '../routes'
 
 import FingerprintIndices from '../components/analysis/FingerprintIndices'
 import MoleculeOverlay from '../components/analysis/MoleculeOverlay'
@@ -227,7 +228,7 @@ function AnalysisPage() {
   }, [result, setSelectedMolecule, setRetrievedFpIndices, setBitEnvironments, clearAnalysis])
   
   const handleBack = () => {
-    navigate('/')
+    navigate(ROUTES.MAIN)
   }
   
   if (!selectedMolecule) {

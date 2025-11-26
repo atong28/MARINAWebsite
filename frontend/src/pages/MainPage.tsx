@@ -3,7 +3,9 @@ import { useNavigate } from 'react-router-dom'
 import { usePredict, useSmilesSearch, useHealth } from '../services/api'
 import { useMainPageStore } from '../store/store'
 import { getAvailableExamples, loadExample, type ExampleMetadata } from '../services/exampleLoader'
+import { ROUTES } from '../routes'
 import SpectralInputTabs from '../components/spectral/SpectralInputTabs'
+import SmilesSearchBox from '../components/spectral/SmilesSearchBox'
 import ResultsGrid from '../components/results/ResultsGrid'
 import StatusIndicator from '../components/common/StatusIndicator'
 import './MainPage.css'
@@ -101,7 +103,7 @@ function MainPage() {
   const handleAnalyze = (index: number) => {
     const result = results[index]
     if (!result) return
-    navigate('/analysis', { state: { result, index } })
+    navigate(ROUTES.ANALYSIS, { state: { result, index } })
   }
 
   const handleLoadExample = async () => {
@@ -208,15 +210,10 @@ function MainPage() {
       
       {activeTab === 'smiles' && (
         <div className="smiles-input-section">
-          <label>
-            SMILES String:
-            <input
-              type="text"
-              value={smilesInput}
-              onChange={(e) => setSmilesInput(e.target.value)}
-              placeholder="Enter SMILES string..."
-            />
-          </label>
+          <SmilesSearchBox
+            value={smilesInput}
+            onChange={setSmilesInput}
+          />
           <div className="controls">
             <label>
               Number of results:

@@ -79,6 +79,11 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
         # Convert to tensor
         pred = torch.tensor(fp, dtype=torch.float32)
         
+        # Build results
+        results = []
+        metadata_service = MetadataService.instance()
+        molecule_renderer = MoleculeRenderer.instance()
+        
         # Get full rankingset and prefilter rows by MW range
         rankingset_full = model_service.get_rankingset()
         if rankingset_full is None:
@@ -92,6 +97,15 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
         for idx in range(num_rows):
             if metadata_service.within_mw_range(idx, mw_min=mw_min, mw_max=mw_max):
                 kept_indices.append(idx)
+        
+        def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
+            vec = torch.zeros(length, dtype=torch.float32)
+            if not indices:
+                return vec
+            for j in indices:
+                if 0 <= j < length:
+                    vec[j] = 1.0
+            return vec
 
         query_tensor = torch.tensor(fp, dtype=torch.float32)
 
@@ -113,20 +127,6 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
         sims, local_idxs = ranker.retrieve_with_scores(query_tensor.unsqueeze(0), n=n)
         sims = sims.squeeze()
         local_idxs = local_idxs.squeeze()
-        
-        # Build results
-        results = []
-        metadata_service = MetadataService.instance()
-        molecule_renderer = MoleculeRenderer.instance()
-        
-        def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
-            vec = torch.zeros(length, dtype=torch.float32)
-            if not indices:
-                return vec
-            for j in indices:
-                if 0 <= j < length:
-                    vec[j] = 1.0
-            return vec
 
         for i, local_row in enumerate(local_idxs.tolist()):
             global_idx = kept_indices[local_row]
@@ -197,11 +197,11 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
                     retrieved_vec = _dense_from_indices(query_tensor.numel(), retrieved_indices)
                     tanimoto_sim = tanimoto_similarity(query_tensor, retrieved_vec)
             except Exception as e:
-                logger.warning(f"Failed to compute Tanimoto similarity for idx {idx}: {e}")
+                logger.warning(f"Failed to compute Tanimoto similarity for idx {global_idx}: {e}")
 
             # Build card with both cosine and Tanimoto similarities
             card = build_result_card(
-                idx,
+                global_idx,
                 entry,
                 cosine_sim,
                 enhanced_svg,

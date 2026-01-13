@@ -117,70 +117,23 @@ def collate(batch):
     batch: list of (data_inputs: dict, mfp: Tensor)
     returns: (batch_inputs: dict[str→Tensor], batch_fps: Tensor)
     """
-    logger = logging.getLogger(__name__)
-    
     dicts, fps = zip(*batch)
-    
     batch_inputs = {}
 
-    # 1) Handle all the *sequence* modalities
     for mod in INPUTS_CANONICAL_ORDER:
-        if mod == "mw":
-            # skip MW here—handle below
-            continue
-
         seqs = [d.get(mod) for d in dicts]
-        # if none of the samples have this modality, skip it entirely
         if all(x is None for x in seqs):
             continue
-
-        # replace missing with empty (0×D) tensors
-        # find the first real tensor to infer D
-        real_tensors = [x for x in seqs if isinstance(x, torch.Tensor) and x.ndim == 2]
-        if real_tensors:
-            D = real_tensors[0].shape[1]
-            seqs = [
-                x if (isinstance(x, torch.Tensor) and x.ndim == 2) else torch.zeros((0, D), dtype=torch.float)
-                for x in seqs
-            ]
-        else:
-            # If no real tensors found, skip this modality entirely
-            continue
-        # now pad them into a (B, L_mod, D) tensor
+        D = next(x.shape[1] for x in seqs if isinstance(
+            x, torch.Tensor) and x.ndim == 2)
+        seqs = [
+            x if (isinstance(x, torch.Tensor) and x.ndim ==
+                    2) else torch.zeros((0, D), dtype=torch.float)
+            for x in seqs
+        ]
         batch_inputs[mod] = pad_sequence(seqs, batch_first=True)
 
-    # 2) Handle MW *scalar* specially
-    mw_vals = [d.get("mw") for d in dicts]
-    if any(v is not None for v in mw_vals):
-        # replace None with 0.0 (or another sentinel if you like)
-        mw_floats = [float(v) if v is not None else 0.0 for v in mw_vals]
-        # create a (B,) tensor of scalars
-        batch_inputs["mw"] = torch.tensor(mw_floats, dtype=torch.float)
-
-    # 3) Handle element‐group tokens (idx + count)
-    elem_idx_seqs = [d.get('elem_idx') for d in dicts]
-    if any(x is not None for x in elem_idx_seqs):
-        # pad element‐ID sequences (pad_value=0)
-        batch_inputs['elem_idx'] = pad_sequence(
-            [x if x is not None else torch.zeros(0,dtype=torch.long)
-             for x in elem_idx_seqs],
-            batch_first=True,
-            padding_value=0
-        )
-        # pad count sequences (pad_value=0)
-        cnt_seqs = [d.get('elem_cnt') for d in dicts]
-        batch_inputs['elem_cnt'] = pad_sequence(
-            [x if x is not None else torch.zeros(0,dtype=torch.long)
-             for x in cnt_seqs],
-            batch_first=True,
-            padding_value=0
-        )
-
-    # 4) Stack your fingerprints
     batch_fps = torch.stack(fps, dim=0)
-    
-    if not batch_inputs:
-        logger.warning("WARNING: batch_inputs is empty!")
     return batch_inputs, batch_fps
 
 class MARINADataModule(pl.LightningDataModule):

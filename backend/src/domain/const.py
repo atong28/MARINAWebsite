@@ -1,4 +1,4 @@
-from typing import Literal, Dict, List
+from typing import Literal, Dict, List, Set
 import re
 from rdkit import Chem
 from rdkit.Chem.rdchem import BondType as BT
@@ -8,6 +8,7 @@ INPUT_TYPES = Literal['hsqc', 'h_nmr', 'c_nmr', 'mass_spec', 'mw', 'formula']
 INPUTS_CANONICAL_ORDER: List[INPUT_TYPES] = ['hsqc', 'c_nmr', 'h_nmr', 'mass_spec', 'mw', 'formula']
 
 DEBUG_LEN: int = 3000
+SELF_ATTN_INPUTS: Set[INPUT_TYPES] = {'hsqc', 'c_nmr', 'h_nmr', 'mass_spec', 'mw'}
 
 DROP_PERCENTAGE: Dict[INPUT_TYPES, float] = {
     'hsqc': 0.20990,

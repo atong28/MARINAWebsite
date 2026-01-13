@@ -35,16 +35,13 @@ def load_model(ckpt_path: str = "data/best.ckpt", params_path: str = "data/param
     session = get_session()
     return session.model
 
-
-## Index-based prediction helpers removed for MVP (dataset not hosted on server)
-
-
 def _preprocess_raw_inputs(raw_inputs: Dict[str, Any]) -> Dict[str, torch.Tensor]:
     """
     Convert raw input dict into the tensor dict expected by the model.
     """
     processed: Dict[str, torch.Tensor] = {}
     for k_mod, v in raw_inputs.items():
+        print(k_mod, v)
         if isinstance(v, list):
             tensor = torch.tensor(v, dtype=torch.float)
             # Reshape sequence data to 2D (num_peaks, features_per_peak)
@@ -61,14 +58,14 @@ def _preprocess_raw_inputs(raw_inputs: Dict[str, Any]) -> Dict[str, torch.Tensor
                         continue
                 elif k_mod == "c_nmr":
                     tensor = tensor.view(-1, 1)
-                    tensor = F.pad(tensor, (0, 2), "constant", 0)
+                    # tensor = F.pad(tensor, (0, 2), "constant", 0)
                 elif k_mod == "h_nmr":
                     tensor = tensor.view(-1, 1)
-                    tensor = F.pad(tensor, (1, 1), "constant", 0)
+                    # tensor = F.pad(tensor, (1, 1), "constant", 0)
                 elif k_mod == "mass_spec":
                     if len(v) % 2 == 0:
                         tensor = tensor.view(-1, 2)
-                        tensor = F.pad(tensor, (0, 1), "constant", 0)
+                        # tensor = F.pad(tensor, (0, 1), "constant", 0)
                     else:
                         logger.warning(
                             "Mass spec data length %d is not divisible by 2, skipping",
@@ -76,6 +73,8 @@ def _preprocess_raw_inputs(raw_inputs: Dict[str, Any]) -> Dict[str, torch.Tensor
                         )
                         continue
             processed[k_mod] = tensor
+        elif k_mod == "mw":
+            processed[k_mod] = torch.tensor([v], dtype=torch.float).view(1, 1)
         elif isinstance(v, torch.Tensor):
             processed[k_mod] = v
         else:

@@ -1,211 +1,242 @@
-import logging
+from typing import List, Optional, Sequence, Tuple
+
 import torch
 import numpy as np
 
-class PositionalEncoder(torch.nn.Module):
-    """Encode positions using sine and cosine waves.
+
+class FourierFeatures(torch.nn.Module):
+    """
+    Scalar -> sinusoidal embedding:
+
+        x -> [sin(x / s_0), ..., sin(x / s_{n_sin-1}),
+              cos(x / c_0), ..., cos(x / c_{n_cos-1})]
+
     Parameters
     ----------
     dim_model : int
-        The number of features to output.
+        Number of output features.
     min_wavelength : float
-        The minimum wavelength to use. 
+        Minimum wavelength in the log-spaced range.
     max_wavelength : float
-        The maximum wavelength to use.
+        Maximum wavelength in the log-spaced range.
     """
 
     def __init__(
         self,
-        dim_model=128,
-        min_wavelength=.001,
-        max_wavelength=10000
+        dim_model: int,
+        min_wavelength: float = 1e-3,
+        max_wavelength: float = 1e4,
     ):
         super().__init__()
 
-        n_sin = int(dim_model / 2)
+        n_sin = dim_model // 2
         n_cos = dim_model - n_sin
 
         if min_wavelength:
             base = min_wavelength / (2 * np.pi)
             scale = max_wavelength / min_wavelength
         else:
-            base = 1
+            base = 1.0
             scale = max_wavelength / (2 * np.pi)
 
+        sin_den = max(n_sin - 1, 1)
+        cos_den = max(n_cos - 1, 1)
+
         sin_term = base * scale ** (
-            torch.arange(0, n_sin).float() / (n_sin - 1)
+            torch.arange(0, n_sin).float() / sin_den
         )
         cos_term = base * scale ** (
-            torch.arange(0, n_cos).float() / (n_cos - 1)
+            torch.arange(0, n_cos).float() / cos_den
         )
-
-        self.sin_terms = sin_term
-        self.cos_terms = cos_term
 
         self.register_buffer("sin_term", sin_term)
         self.register_buffer("cos_term", cos_term)
 
-    def forward(self, X):
-        """Encode positions
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """
         Parameters
         ----------
-        X : torch.Tensor of shape (n_positions)
-            The positions to encode
+        x : torch.Tensor of shape (..., 1)
+            Scalar coordinates to encode.
+
         Returns
         -------
-        torch.Tensor of shape (n_positions, dim_model)
-            The encoded positions
+        torch.Tensor of shape (..., dim_model)
+            Sinusoidal embeddings.
         """
-        if torch.cuda.is_available():
-            self.sin_term = self.sin_term.to(X)
-            self.cos_term = self.cos_term.to(X)
-        
-        sin_mz = torch.sin(X / self.sin_term)
-        cos_mz = torch.cos(X / self.cos_term)
-        return torch.cat([sin_mz, cos_mz], axis=-1)
+        if self.sin_term.device != x.device or self.sin_term.dtype != x.dtype:
+            self.sin_term = self.sin_term.to(device=x.device, dtype=x.dtype)
+            self.cos_term = self.cos_term.to(device=x.device, dtype=x.dtype)
+
+        sin_mz = torch.sin(x / self.sin_term)
+        cos_mz = torch.cos(x / self.cos_term)
+        return torch.cat([sin_mz, cos_mz], dim=-1)
+
 
 class CoordinateEncoder(torch.nn.Module):
     """
-    Generate positional encoding of coordinates
+    Positional encoding for coordinates, with optional sign-encoding dimensions.
+
+    This merges the old CoordinateEncoder + SignCoordinateEncoder into a single
+    generic encoder.
 
     Parameters
     ----------
-    dim_model : int, optional
-        The latent dimensionality used by the Transformer model.
-    dim_coords: tuple or None
-        A tuple specifying the number of features to use for encoding 
-        each coordinate. Must sum to dim model
-    wavelength_bounds : list(tuple), optional
-        A list of tuples of (minimum, maximum) wavelengths for
-        each dimension to be encoded 
+    dim_model : int
+        The total output dimensionality.
+    dim_coords : Sequence[int]
+        Per-input-dimension embedding sizes (for bookkeeping). The entries
+        corresponding to sign dimensions are *not* used directly; instead the
+        sign embedding size is computed as:
+
+            sign_embedding_size = dim_model - sum(dim for non-sign dims)
+
+        So:
+            sum(non-sign dims) + sign_embedding_size == dim_model
+    wavelength_bounds : list[tuple[float, float]] or None
+        Bounds (min, max) for wavelengths for each *non-sign* dimension,
+        in order of appearance. This matches the behavior of the original
+        SignCoordinateEncoder: the list is consumed only for non-sign dims.
+    is_sign_encoding : list[bool] or None
+        Flags indicating which coordinates use sign encoding. At most one
+        dimension may be sign-encoded.
     """
 
     def __init__(
         self,
-        dim_model,
-        dim_coords,
-        wavelength_bounds=None,
+        dim_model: int,
+        dim_coords: Sequence[int],
+        wavelength_bounds: Optional[Sequence[Tuple[float, float]]] = None,
+        is_sign_encoding: Optional[Sequence[bool]] = None,
     ):
         super().__init__()
-        assert (sum(dim_coords) == dim_model)
-        if wavelength_bounds:
-            assert (len(wavelength_bounds) == len(dim_coords))
 
-        self.positional_encoders = []
+        dim_coords = list(dim_coords)
         self.dim_coords = dim_coords
-        for idx, dim in enumerate(dim_coords):
-            if wavelength_bounds:
-                min_wavelength = wavelength_bounds[idx][0]
-                max_wavelength = wavelength_bounds[idx][1]
-                p = PositionalEncoder(
-                    dim_model=dim,
-                    min_wavelength=min_wavelength,
-                    max_wavelength=max_wavelength
-                )
-            else:
-                p = PositionalEncoder(dim_model=dim)
-            self.positional_encoders.append(p)
 
-    def forward(self, X):
-        """Encode coordinates
-        Parameters
-        ----------
-        X : torch.Tensor of shape (batch_size, n_coords, n_dimensions)
-            The coordinates to embed
-        Returns
-        -------
-        torch.Tensor of shape (batch_size, n_coords, dim_model)
-            The encoded coordinates
-        """
-        assert (X.shape[2] == len(self.dim_coords))
-        embeddings = []
-        for dim, encoder in enumerate(self.positional_encoders):
-            embeddings.append(encoder(X[:, :, [dim]]))
+        if is_sign_encoding is None:
+            is_sign_encoding = [False] * len(dim_coords)
+        else:
+            is_sign_encoding = list(is_sign_encoding)
 
-        return torch.cat(embeddings, dim=2)
-
-
-
-class SignCoordinateEncoder(torch.nn.Module):
-    """
-    Positional encoding for coordinates, with a special binary/sign dimension at the end.
-
-    Expects input X of shape (B*N, D), where D == len(dim_coords)
-    """
-    def __init__(
-        self,
-        dim_model,
-        dim_coords,
-        wavelength_bounds=None,
-        use_peak_values=False
-    ):
-        super().__init__()
-        self.logger = logging.getLogger("lightning")
-        assert sum(dim_coords) == dim_model
-        self.sign_embedding_dims = dim_model - sum(dim_coords[:-1])
-        self.positional_encoders = []
-        self.dim_coords = dim_coords
-        self.use_peak_values = use_peak_values
-
-        wavelength_index = 0
-        for idx, dim in enumerate(dim_coords[:-1]):
-            if dim == 0:
-                self.positional_encoders.append(None)
-                continue
-            if wavelength_bounds:
-                min_wavelength, max_wavelength = wavelength_bounds[wavelength_index]
-                p = PositionalEncoder(
-                    dim_model=dim,
-                    min_wavelength=min_wavelength,
-                    max_wavelength=max_wavelength
-                )
-                wavelength_index += 1
-            else:
-                p = PositionalEncoder(dim_model=dim)
-            self.positional_encoders.append(p)
-
-        self.logger.warning(
-            f"Initialized SignCoordinateEncoder[{dim_model}] with dims {self.dim_coords}, "
-            f"{len([p for p in self.positional_encoders if p is not None])} encoders, "
-            f"and {self.sign_embedding_dims} bits reserved for the final dimension."
+        assert len(is_sign_encoding) == len(dim_coords), (
+            f"is_sign_encoding length ({len(is_sign_encoding)}) must match "
+            f"dim_coords length ({len(dim_coords)})"
         )
 
-    def forward(self, X):
+        num_sign_dims = sum(is_sign_encoding)
+        assert num_sign_dims <= 1, (
+            "CoordinateEncoder supports at most one sign encoding dimension, "
+            f"but found {num_sign_dims}"
+        )
+
+        self.is_sign_encoding = is_sign_encoding
+
+        self.sign_dim_idx: Optional[int] = None
+        non_sign_dims_sum = 0
+        for idx, (dim, is_sign) in enumerate(zip(dim_coords, is_sign_encoding)):
+            if is_sign:
+                self.sign_dim_idx = idx
+            else:
+                non_sign_dims_sum += dim
+
+        if self.sign_dim_idx is not None:
+            self.sign_embedding_size = dim_model - non_sign_dims_sum
+            assert self.sign_embedding_size >= 0, (
+                "Sign embedding size became negative. "
+                "Check dim_model vs non-sign dims."
+            )
+        else:
+            self.sign_embedding_size = 0
+            assert non_sign_dims_sum == dim_model, (
+                "With no sign dimension, sum(dim_coords) must equal dim_model."
+            )
+
+        self.dim_to_wavelength = {}
+        if wavelength_bounds is not None:
+            wavelength_idx = 0
+            for idx, (dim, is_sign) in enumerate(zip(dim_coords, is_sign_encoding)):
+                if not is_sign and dim > 0:
+                    assert wavelength_idx < len(wavelength_bounds), (
+                        "Not enough wavelength_bounds provided for non-sign dims."
+                    )
+                    self.dim_to_wavelength[idx] = wavelength_bounds[wavelength_idx]
+                    wavelength_idx += 1
+
+            assert wavelength_idx == len(wavelength_bounds), (
+                "Too many wavelength_bounds provided for the number of non-sign dims."
+            )
+
+        encoders = []
+        for idx, (dim, is_sign) in enumerate(zip(dim_coords, is_sign_encoding)):
+            if is_sign or dim == 0:
+                encoders.append(None)
+                continue
+
+            if idx in self.dim_to_wavelength:
+                min_w, max_w = self.dim_to_wavelength[idx]
+                enc = FourierFeatures(dim_model=dim, min_wavelength=min_w, max_wavelength=max_w)
+            else:
+                enc = FourierFeatures(dim_model=dim)
+            encoders.append(enc)
+
+        self.positional_encoders = torch.nn.ModuleList(
+            [e if e is not None else torch.nn.Identity() for e in encoders]
+        )
+        self._encoder_is_none = [e is None for e in encoders]
+
+        self.dim_model = dim_model
+
+    def forward(self, X: torch.Tensor) -> torch.Tensor:
         """
         Parameters
         ----------
         X : Tensor of shape (B*N, D)
-            Coordinates to encode, one row per data point
+            Coordinates to encode, where D must equal len(dim_coords).
 
         Returns
         -------
         Tensor of shape (B*N, dim_model)
         """
-        assert X.shape[1] == len(self.dim_coords)
+        assert X.shape[1] == len(self.dim_coords), (
+            f"Input dimension {X.shape[1]} must match dim_coords length "
+            f"{len(self.dim_coords)}"
+        )
+
         embeddings = []
 
-        for dim, encoder in enumerate(self.positional_encoders):
-            if encoder is None:
-                continue
-            coord = X[:, dim:dim+1]  # shape (B*N, 1)
-            encoded = encoder(coord)  # shape (B*N, dim_for_dim)
-            embeddings.append(encoded)
-
-        if self.sign_embedding_dims:
-            last_dim = X[:, -1:]
-            if self.use_peak_values:
-                repeated = last_dim.expand(-1, self.sign_embedding_dims)
-                embeddings.append(repeated)
+        for idx, (is_sign, encoder_is_none, encoder) in enumerate(
+            zip(self.is_sign_encoding, self._encoder_is_none, self.positional_encoders)
+        ):
+            if is_sign:
+                sign_dim = X[:, idx:idx + 1]  # (B*N, 1)
+                encoded = torch.sign(sign_dim).expand(-1, self.sign_embedding_size)
+                embeddings.append(encoded)
+            elif not encoder_is_none:
+                coord = X[:, idx:idx + 1]  # (B*N, 1)
+                embeddings.append(encoder(coord))  # (B*N, dim_for_dim)
             else:
-                signs = torch.sign(last_dim).expand(-1, self.sign_embedding_dims)
-                embeddings.append(signs)
+                continue
 
-        return torch.cat(embeddings, dim=1)
+        out = torch.cat(embeddings, dim=1)
+        assert out.shape[1] == self.dim_model, (
+            f"Output dimension {out.shape[1]} does not match dim_model {self.dim_model}"
+        )
+        return out
+
 
 def build_encoder(
-    dim_model: int, 
-    dim_coords: tuple[int, int, int],
-    wavelength_bounds=None,
-    use_peak_values=False
-):
-    return SignCoordinateEncoder(dim_model, dim_coords, wavelength_bounds, use_peak_values)
+    dim_model: int,
+    dim_coords: List[int],
+    wavelength_bounds: Optional[Sequence[Tuple[float, float]]] = None,
+    is_sign_encoding: Optional[Sequence[bool]] = None,
+) -> CoordinateEncoder:
+    """
+    Convenience factory, matching the old build_encoder signature.
+    """
+    return CoordinateEncoder(
+        dim_model=dim_model,
+        dim_coords=dim_coords,
+        wavelength_bounds=wavelength_bounds,
+        is_sign_encoding=is_sign_encoding,
+    )

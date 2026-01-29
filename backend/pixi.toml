@@ -6,7 +6,7 @@ platforms = ["osx-arm64", "linux-64", "linux-aarch64"]
 version = "2.0.0"
 
 [tasks]
-start = { "uvicorn src.api.app:app --host 0.0.0.0 --port 5000", env = { LD_LIBRARY_PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/lib:$LD_LIBRARY_PATH" }}
+start = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 5000" }
 dev = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 8002 --reload", env = { KMP_DUPLICATE_LIB_OK = "TRUE", LD_LIBRARY_PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/lib:$LD_LIBRARY_PATH" } }
 test = "pytest"
 

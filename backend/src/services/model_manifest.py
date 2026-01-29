@@ -23,6 +23,7 @@ class ModelEntry:
     root_rel: str  # relative (as in JSON), for API
     type: str
     default: bool
+    display_name: Optional[str] = None
 
 
 _manifest: Optional[List[ModelEntry]] = None
@@ -63,6 +64,7 @@ def load_models_json(path: Optional[str] = None) -> List[ModelEntry]:
         root = m.get("root")
         typ = m.get("type")
         default = m.get("default", False)
+        display_name = m.get("display_name")
 
         if not isinstance(mid, str) or not mid:
             logger.warning("models.json: models[%d] missing or invalid 'id'", i)
@@ -89,6 +91,8 @@ def load_models_json(path: Optional[str] = None) -> List[ModelEntry]:
             continue
         if not isinstance(default, bool):
             default = False
+        if display_name is not None and (not isinstance(display_name, str) or not display_name):
+            display_name = None
         if default:
             default_count += 1
 
@@ -99,6 +103,7 @@ def load_models_json(path: Optional[str] = None) -> List[ModelEntry]:
                 root_rel=root_rel,
                 type=typ,
                 default=bool(default),
+                display_name=display_name,
             )
         )
 

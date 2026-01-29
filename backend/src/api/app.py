@@ -61,33 +61,28 @@ _server_start_time = time.time()
 # Initialize model in background on startup
 @app.on_event("startup")
 async def startup_event():
-    """Bootstrap from models.json when present; load default model."""
+    """Bootstrap from models.json when present; load all configured models."""
     logger.info("Starting MARINA backend...")
-    try:
-        from src.services.model_manifest import (
-            get_default_model_id,
-            get_model_info,
-            load_models_json,
-        )
+    from src.services.model_manifest import load_models_json, list_models
 
-        load_models_json()
-        default_id = get_default_model_id()
-        info = get_model_info(default_id)
+    load_models_json()
+    entries = list_models()
+    if not entries:
+        logger.warning("No models configured in models.json; skipping model preload.")
+        return
 
-        # Load any model type that is present in the manifest; unsupported types
-        # will surface as errors from the model registry / session factory.
-        if info is None:
-            logger.warning(
-                "Default model %s not found in models.json; skipping load.", default_id
+    model_service = ModelService.instance()
+    for e in entries:
+        try:
+            logger.info("Preloading model %s (type=%s)...", e.id, e.type)
+            model_service.preload_resources(e.id)
+            logger.info("Model %s (type=%s) loaded successfully", e.id, e.type)
+        except Exception as exc:
+            logger.error(
+                "Failed to preload model %s (type=%s): %s", e.id, e.type, exc, exc_info=True
             )
-        else:
-            model_service = ModelService.instance()
-            model_service.ensure_loaded(default_id)
-            logger.info(
-                "Model %s (type=%s) loaded successfully", default_id, info.type
-            )
-    except Exception as e:
-        logger.error("Failed to load model: %s", e, exc_info=True)
+            # Fail-fast: if a configured model can't load, don't start the app.
+            raise
 
 if __name__ == "__main__":
     uvicorn.run(

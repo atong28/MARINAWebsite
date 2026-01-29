@@ -25,6 +25,32 @@ router = APIRouter()
 limiter = get_limiter()
 
 
+def ensure_model_ready(model_service: ModelService, model_id: str) -> None:
+    """
+    Ensure a model is loaded and ready. Attempts to auto-load if not ready.
+    Raises HTTPException if model cannot be loaded.
+    """
+    if not model_service.is_ready(model_id):
+        logger.info("Model %s not loaded, attempting to load...", model_id)
+        try:
+            model_service.ensure_loaded(model_id)
+            # Verify it's ready after loading attempt
+            if not model_service.is_ready(model_id):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Model '{model_id}' failed to load. Please check model files and try again.",
+                )
+            logger.info("Model %s loaded successfully", model_id)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Failed to auto-load model %s: %s", model_id, e, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Model '{model_id}' is not available and failed to load: {str(e)}",
+            )
+
+
 @router.post("/predict", response_model=PredictResponse, status_code=status.HTTP_200_OK)
 @limiter.limit("30 per minute")
 async def predict(request: Request, data: PredictRequest):
@@ -37,11 +63,7 @@ async def predict(request: Request, data: PredictRequest):
         raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
-    if not model_service.is_ready(mid):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model is not ready. Please try again in a moment.",
-        )
+    ensure_model_ready(model_service, mid)
 
     requested_k = data.k
     if requested_k > MAX_TOP_K:

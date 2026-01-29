@@ -40,11 +40,25 @@ async def analyze(request: Request, data: AnalysisRequest):
         raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
+    # Auto-load model if not ready
     if not model_service.is_ready(mid):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model is not ready. Please try again in a moment."
-        )
+        logger.info("Model %s not loaded, attempting to load...", mid)
+        try:
+            model_service.ensure_loaded(mid)
+            if not model_service.is_ready(mid):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Model '{mid}' failed to load. Please check model files and try again.",
+                )
+            logger.info("Model %s loaded successfully", mid)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Failed to auto-load model %s: %s", mid, e, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Model '{mid}' is not available and failed to load: {str(e)}",
+            )
     
     target_smiles = data.smiles.strip()
     if not target_smiles:
@@ -145,11 +159,25 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
         raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
+    # Auto-load model if not ready
     if not model_service.is_ready(mid):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model is not ready. Please try again in a moment.",
-        )
+        logger.info("Model %s not loaded, attempting to load...", mid)
+        try:
+            model_service.ensure_loaded(mid)
+            if not model_service.is_ready(mid):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail=f"Model '{mid}' failed to load. Please check model files and try again.",
+                )
+            logger.info("Model %s loaded successfully", mid)
+        except HTTPException:
+            raise
+        except Exception as e:
+            logger.error("Failed to auto-load model %s: %s", mid, e, exc_info=True)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail=f"Model '{mid}' is not available and failed to load: {str(e)}",
+            )
 
     smiles = data.smiles.strip()
     if not smiles:

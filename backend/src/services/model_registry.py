@@ -32,15 +32,14 @@ def ensure_loaded(model_id: str, model_root: Optional[str] = None) -> "ModelSess
             return _registry[model_id]
 
     root: Optional[str] = model_root
+    model_type: Optional[str] = None
     if root is None:
         entries = load_models_json()
         if entries:
             info = get_model_info(model_id)
             if info is not None:
-                if info.type != "marina":
-                    raise RuntimeError(
-                        f"Model type {info.type!r} not yet supported (model_id={model_id})"
-                    )
+                # Allow all manifest-supported types (e.g., 'marina', 'spectre').
+                model_type = info.type
                 root = info.root
         if root is None and model_id == DEFAULT_MODEL_ID:
             root = MODEL_ROOT
@@ -49,17 +48,17 @@ def ensure_loaded(model_id: str, model_root: Optional[str] = None) -> "ModelSess
                 f"Unknown model_id {model_id!r} and no model_root provided"
             )
 
-    return register(model_id, root)
+    return register(model_id, root, model_type=model_type)
 
 
-def register(model_id: str, model_root: str) -> "ModelSession":
+def register(model_id: str, model_root: str, model_type: Optional[str] = None) -> "ModelSession":
     """
     Load model from model_root, register under model_id, and return the session.
     Caller must not hold _registry_lock.
     """
     from src.domain.model_session import ModelSession
 
-    session = ModelSession.from_model_root(model_root)
+    session = ModelSession.from_model_root(model_root, model_type=model_type)
     with _registry_lock:
         _registry[model_id] = session
     logger.info("Registered model %s from %s", model_id, model_root)

@@ -1,4 +1,7 @@
+import { useState } from 'react'
+import { useQueryClient } from '@tanstack/react-query'
 import { useMainPageStore } from '../../store/store'
+import { useLoadModel } from '../../services/api'
 import './ModelSelector.css'
 
 interface ModelSelectorProps {
@@ -7,6 +10,29 @@ interface ModelSelectorProps {
 
 function ModelSelector({ compact = true }: ModelSelectorProps) {
   const { availableModels, selectedModelId, defaultModelId, setSelectedModelId } = useMainPageStore()
+  const queryClient = useQueryClient()
+  const [loadError, setLoadError] = useState<string | null>(null)
+
+  const selected = selectedModelId ?? defaultModelId ?? availableModels?.[0]?.id ?? ''
+  const selectedModel = availableModels?.find(m => m.id === selected)
+  const needsLoading = selectedModel && !selectedModel.loaded
+
+  const loadModelMutation = useLoadModel({
+    onSuccess: () => {
+      setLoadError(null)
+      // Invalidate models query to refresh loaded status
+      queryClient.invalidateQueries({ queryKey: ['models'] })
+    },
+    onError: (error) => {
+      setLoadError(error.message || 'Failed to load model')
+    },
+  })
+
+  const handleLoad = () => {
+    if (!selected) return
+    setLoadError(null)
+    loadModelMutation.mutate(selected)
+  }
 
   if (!availableModels || availableModels.length === 0) {
     return (
@@ -17,8 +43,6 @@ function ModelSelector({ compact = true }: ModelSelectorProps) {
     )
   }
 
-  const selected = selectedModelId ?? defaultModelId ?? availableModels[0]?.id ?? ''
-
   return (
     <div className={`model-selector ${compact ? 'compact' : ''}`}>
       <label className="model-selector-label" htmlFor="model-selector">
@@ -28,7 +52,10 @@ function ModelSelector({ compact = true }: ModelSelectorProps) {
         id="model-selector"
         className="model-selector-select"
         value={selected}
-        onChange={(e) => setSelectedModelId(e.target.value)}
+        onChange={(e) => {
+          setSelectedModelId(e.target.value)
+          setLoadError(null)
+        }}
       >
         {availableModels.map((m) => {
           const suffixParts: string[] = []
@@ -44,6 +71,23 @@ function ModelSelector({ compact = true }: ModelSelectorProps) {
           )
         })}
       </select>
+      {needsLoading && (
+        <div className="model-selector-load-container">
+          <button
+            className="model-selector-load-button"
+            onClick={handleLoad}
+            disabled={loadModelMutation.isPending}
+            title="Load model and preload resources for faster predictions"
+          >
+            {loadModelMutation.isPending ? 'Loading...' : 'Load'}
+          </button>
+          {loadError && (
+            <span className="model-selector-load-error" title={loadError}>
+              ⚠
+            </span>
+          )}
+        </div>
+      )}
     </div>
   )
 }

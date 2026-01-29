@@ -10,9 +10,9 @@ import torch
 
 from src.config import CKPT_PATH, MODEL_ROOT, PARAMS_PATH, RETRIEVAL_PATH
 from src.domain.fingerprint.fp_loader import FPLoader, make_fp_loader_for_model_root
-from src.domain.model import MARINA
+from src.domain.model import MARINA, SPECTRE
 from src.domain.ranker import RankingSet
-from src.domain.settings import MARINAArgs
+from src.domain.settings import MARINAArgs, SPECTREArgs
 
 
 logger = logging.getLogger(__name__)
@@ -38,12 +38,15 @@ def _mw_from_entry(entry: Optional[Dict[str, Any]]) -> Optional[float]:
 @dataclass
 class ModelSession:
     """
-    Encapsulates the loaded MARINA model, fingerprint loader, rankingset store,
-    metadata, and MW index for O(1) range filtering.
+    Encapsulates the loaded model (MARINA or SPECTRE), fingerprint loader,
+    rankingset store, metadata, and MW index for O(1) range filtering.
     """
+    # Model metadata
+    type: str  # e.g. "marina" or "spectre"
 
-    args: MARINAArgs
-    model: MARINA
+    # Underlying model and configuration
+    args: MARINAArgs | SPECTREArgs
+    model: torch.nn.Module
     fp_loader: FPLoader
     fp_type: str
     ckpt_path: str
@@ -60,7 +63,7 @@ class ModelSession:
     _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
 
     @classmethod
-    def from_model_root(cls, model_root: str) -> "ModelSession":
+    def from_model_root(cls, model_root: str, model_type: Optional[str] = None) -> "ModelSession":
         """
         Load model and metadata from a per-model directory (e.g. data/marina_best/).
         Uses make_fp_loader_for_model_root so dataset_root and retrieval both
@@ -71,20 +74,32 @@ class ModelSession:
         retrieval_path = os.path.join(model_root, "retrieval.pkl")
         metadata_path = os.path.join(model_root, "metadata.json")
 
+        # Default to MARINA for backwards compatibility when type is not provided.
+        model_type = model_type or "marina"
+
         logger.info("Loading model params from %s", params_path)
         with open(params_path, "r") as f:
             params = json.load(f)
-        args = MARINAArgs(**params)
+
+        if model_type == "spectre":
+            args: MARINAArgs | SPECTREArgs = SPECTREArgs(**params)
+        else:
+            # Treat any non-spectre type as MARINA-compatible by default.
+            args = MARINAArgs(**params)
 
         fp_loader = make_fp_loader_for_model_root(
             model_root,
-            fp_type=args.fp_type,
+            fp_type=getattr(args, "fp_type", "RankingEntropy"),
             entropy_out_dim=args.out_dim,
             max_radius=6,
         )
 
-        logger.info("Instantiating MARINA model")
-        model = MARINA(args, fp_loader)
+        if model_type == "spectre":
+            logger.info("Instantiating SPECTRE model")
+            model = SPECTRE(args, fp_loader)
+        else:
+            logger.info("Instantiating MARINA model")
+            model = MARINA(args, fp_loader)
 
         logger.info("Loading checkpoint from %s (cpu)", ckpt_path)
         ckpt = torch.load(ckpt_path, map_location="cpu")
@@ -99,6 +114,7 @@ class ModelSession:
         metadata = _load_metadata(metadata_path)
 
         return cls(
+            type=model_type,
             args=args,
             model=model,
             fp_loader=fp_loader,

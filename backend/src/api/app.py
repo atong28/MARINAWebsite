@@ -61,7 +61,7 @@ _server_start_time = time.time()
 # Initialize model in background on startup
 @app.on_event("startup")
 async def startup_event():
-    """Bootstrap from models.json when present; load default model if marina."""
+    """Bootstrap from models.json when present; load default model."""
     logger.info("Starting MARINA backend...")
     try:
         from src.services.model_manifest import (
@@ -73,16 +73,19 @@ async def startup_event():
         load_models_json()
         default_id = get_default_model_id()
         info = get_model_info(default_id)
-        if info is not None and info.type != "marina":
+
+        # Load any model type that is present in the manifest; unsupported types
+        # will surface as errors from the model registry / session factory.
+        if info is None:
             logger.warning(
-                "Default model %s has type %r (not marina); skipping load.",
-                default_id,
-                info.type,
+                "Default model %s not found in models.json; skipping load.", default_id
             )
         else:
             model_service = ModelService.instance()
             model_service.ensure_loaded(default_id)
-            logger.info("Model %s loaded successfully", default_id)
+            logger.info(
+                "Model %s (type=%s) loaded successfully", default_id, info.type
+            )
     except Exception as e:
         logger.error("Failed to load model: %s", e, exc_info=True)
 

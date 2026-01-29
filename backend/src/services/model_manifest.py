@@ -160,6 +160,4 @@ def resolve_and_validate_model_id(
     info = get_model_info(mid)
     if info is None:
         return (mid, (400, f"Unknown model_id '{mid}'"))
-    if info.type != "marina":
-        return (mid, (501, f"Model type '{info.type}' is not yet supported."))
     return (mid, None)

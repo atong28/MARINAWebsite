@@ -70,12 +70,21 @@ def test_models_endpoint(client):
     assert isinstance(data["models"], list)
 
 
-def test_predict_model_id_spectre_501(client, sample_spectral_data):
-    """Requesting model_id=spectre_best returns 501 (not yet supported)."""
+def test_predict_model_id_spectre_supported(client, sample_spectral_data):
+    """
+    Requesting model_id=spectre_best should be accepted by the backend.
+
+    Depending on local availability of data/spectre_best, this may either:
+      - return 200 with predictions, or
+      - return 503 if the model resources are not present.
+    Both outcomes indicate that the model type is recognized and wired through.
+    """
     payload = {**sample_spectral_data, "model_id": "spectre_best"}
     response = client.post("/api/predict", json=payload)
-    assert response.status_code == 501
-    assert "spectre" in response.json().get("detail", "").lower()
+    assert response.status_code in [
+        status.HTTP_200_OK,
+        status.HTTP_503_SERVICE_UNAVAILABLE,
+    ]
 
 
 def test_predict_model_id_unknown_400(client, sample_spectral_data):

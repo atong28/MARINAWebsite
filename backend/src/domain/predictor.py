@@ -50,14 +50,11 @@ def _preprocess_raw_inputs(raw_inputs: Dict[str, Any]) -> Dict[str, torch.Tensor
                         continue
                 elif k_mod == "c_nmr":
                     tensor = tensor.view(-1, 1)
-                    # tensor = F.pad(tensor, (0, 2), "constant", 0)
                 elif k_mod == "h_nmr":
                     tensor = tensor.view(-1, 1)
-                    # tensor = F.pad(tensor, (1, 1), "constant", 0)
                 elif k_mod == "mass_spec":
                     if len(v) % 2 == 0:
                         tensor = tensor.view(-1, 2)
-                        # tensor = F.pad(tensor, (0, 1), "constant", 0)
                     else:
                         logger.warning(
                             "Mass spec data length %d is not divisible by 2, skipping",
@@ -78,17 +75,83 @@ def _preprocess_raw_inputs(raw_inputs: Dict[str, Any]) -> Dict[str, torch.Tensor
     return processed
 
 
+def _to_spectre_batch(
+    processed: Dict[str, torch.Tensor]
+) -> tuple[torch.Tensor, torch.Tensor]:
+    """
+    Convert MARINA-style modality dict into SPECTRE's (inputs, type_indicator).
+
+    Type indicators (aligned with SPECTREDataset._pad_and_stack_input):
+        0: HSQC
+        1: C NMR
+        2: H NMR
+        3: MW
+        4: Mass Spectrometry
+    """
+    inputs = []
+    type_indicators: list[int] = []
+
+    # HSQC is already (N, 3) after preprocessing.
+    hsqc = processed.get("hsqc")
+    if hsqc is not None and hsqc.numel() > 0:
+        inputs.append(hsqc)
+        type_indicators.extend([0] * hsqc.shape[0])
+
+    c_nmr = processed.get("c_nmr")
+    if c_nmr is not None and c_nmr.numel() > 0:
+        # (N,1) -> (N,3) by padding zeros to the right.
+        c_nmr_padded = torch.nn.functional.pad(c_nmr, (0, 2), "constant", 0)
+        inputs.append(c_nmr_padded)
+        type_indicators.extend([1] * c_nmr_padded.shape[0])
+
+    h_nmr = processed.get("h_nmr")
+    if h_nmr is not None and h_nmr.numel() > 0:
+        # (N,1) -> (N,3) by padding one zero on each side.
+        h_nmr_padded = torch.nn.functional.pad(h_nmr, (1, 1), "constant", 0)
+        inputs.append(h_nmr_padded)
+        type_indicators.extend([2] * h_nmr_padded.shape[0])
+
+    mass_spec = processed.get("mass_spec")
+    if mass_spec is not None and mass_spec.numel() > 0:
+        # (N,2) -> (N,3) by padding a trailing zero.
+        mass_spec_padded = torch.nn.functional.pad(mass_spec, (0, 1), "constant", 0)
+        inputs.append(mass_spec_padded)
+        type_indicators.extend([4] * mass_spec_padded.shape[0])
+
+    mw = processed.get("mw")
+    if mw is not None and mw.numel() > 0:
+        # Scalar -> [mw, 0, 0]
+        mw_val = float(mw.view(-1)[0].item())
+        mw_tensor = torch.tensor([[mw_val, 0.0, 0.0]], dtype=torch.float)
+        inputs.append(mw_tensor)
+        type_indicators.append(3)
+
+    if not inputs:
+        raise ValueError("No valid spectral inputs provided for SPECTRE model.")
+
+    stacked = torch.vstack(inputs)  # (N_total, 3)
+    type_indicator = torch.tensor(type_indicators, dtype=torch.long)  # (N_total,)
+    # Add batch dimension: (1, N_total, 3) and (1, N_total)
+    return stacked.unsqueeze(0), type_indicator.unsqueeze(0)
+
+
 def _run_model(session: ModelSession, processed: Dict[str, torch.Tensor]) -> torch.Tensor:
     """
-    Run the MARINA model on preprocessed inputs and return the first prediction vector.
+    Run the underlying model on preprocessed inputs and return the first prediction vector.
+    Handles both MARINA (dict-based) and SPECTRE (stacked tensor + type_indicator).
     """
-    batch_inputs, _ = collate(
-        [(processed, torch.zeros((session.args.out_dim,), dtype=torch.float))]
-    )
-
     with _forward_lock, torch.no_grad():
-        logger.info("Calling model forward...")
-        out = session.model(batch_inputs)
+        logger.info("Calling model forward for type=%s...", getattr(session, "type", "marina"))
+
+        if getattr(session, "type", "marina") == "spectre":
+            inputs, type_indicator = _to_spectre_batch(processed)
+            out = session.model(inputs, type_indicator)
+        else:
+            batch_inputs, _ = collate(
+                [(processed, torch.zeros((session.args.out_dim,), dtype=torch.float))]
+            )
+            out = session.model(batch_inputs)
+
         logger.info(f"Model output shape: {out.shape}")
         preds = out.detach().cpu()
         return preds[0]

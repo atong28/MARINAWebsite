@@ -66,3 +66,14 @@ class ModelService:
         session = self._session(model_id)
         ranker = session.get_rankingset()
         return ranker.data
+
+    def preload_resources(self, model_id: Optional[str] = None) -> None:
+        """
+        Preload all lazy-loaded resources for a model (rankingset, MW index).
+        This ensures fast predictions by loading everything upfront.
+        """
+        mid = model_id or get_default_model_id()
+        self.ensure_loaded(mid)
+        session = self._session(mid)
+        # Trigger rankingset loading, which also builds MW index
+        session.get_rankingset()

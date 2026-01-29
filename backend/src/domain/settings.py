@@ -2,6 +2,8 @@ from typing import Literal, List, Dict
 from pydantic.dataclasses import dataclass
 from dataclasses import field
 
+from src.marina.src.modules.spectre.args import SPECTREArgs
+
 @dataclass
 class MARINAArgs:
     # random seed

@@ -104,6 +104,12 @@ export interface ModelsResponse {
   default_model_id: string
 }
 
+export interface LoadModelResponse {
+  model_id: string
+  status: 'loaded' | 'already_loaded' | 'error'
+  message: string
+}
+
 export interface SecondaryRetrievalRequest {
   predicted_fp: number[]
   retrieved_fp: number[]
@@ -208,6 +214,10 @@ export const api = {
   health: () => fetchJson<HealthResponse>('/health'),
 
   models: () => fetchJson<ModelsResponse>('/models'),
+
+  loadModel: (modelId: string) => fetchJson<LoadModelResponse>(`/models/${modelId}/load`, {
+    method: 'POST',
+  }),
   
   predict: (data: PredictRequest) => {
     const controller = abortPreviousAndCreate('predict')
@@ -279,6 +289,13 @@ export function useModels(options?: UseQueryOptions<ModelsResponse>) {
     queryKey: ['models'],
     queryFn: api.models,
     staleTime: 5 * 60 * 1000,
+    ...options,
+  })
+}
+
+export function useLoadModel(options?: UseMutationOptions<LoadModelResponse, Error, string>) {
+  return useMutation({
+    mutationFn: api.loadModel,
     ...options,
   })
 }

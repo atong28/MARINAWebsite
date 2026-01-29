@@ -7,7 +7,7 @@ version = "2.0.0"
 
 [tasks]
 start = "uvicorn src.api.app:app --host 0.0.0.0 --port 5000 --reload"
-dev = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 8002 --reload", env = { KMP_DUPLICATE_LIB_OK = "TRUE" } }
+dev = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 8002 --reload", env = { KMP_DUPLICATE_LIB_OK = "TRUE", LD_LIBRARY_PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/lib:$LD_LIBRARY_PATH" } }
 test = "pytest"
 
 [dependencies]
@@ -31,3 +31,10 @@ torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cpu" }
 torchvision = { version = "==0.22.1", index = "https://download.pytorch.org/whl/cpu" }
 lightning = { version = "==2.5.5" }
 
+[target.linux-64.dependencies]
+libgcc-ng = "*"
+libstdcxx-ng = "*"
+
+[target.linux-aarch64.dependencies]
+libgcc-ng = "*"
+libstdcxx-ng = "*"

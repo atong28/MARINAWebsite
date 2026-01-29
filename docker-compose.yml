@@ -20,9 +20,11 @@ services:
       - HOST=${BACKEND_HOST:-0.0.0.0}
       # Pixi path
       - PATH=/root/.pixi/bin:$PATH
-      # Data configuration
+      # Data: models.json drives model list when present
       - DATA_DIR=/app/data
-      - METADATA_PATH=/app/data/metadata.json
+      - MODELS_JSON_PATH=/app/data/models.json
+      - MODEL_ROOT=/app/data/marina_best
+      - DEFAULT_MODEL_ID=marina_best
       # Debugging
       - PYTHONUNBUFFERED=1
       - HIGHLIGHT_DEBUG=${HIGHLIGHT_DEBUG:-false}

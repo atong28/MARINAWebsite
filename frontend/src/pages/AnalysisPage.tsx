@@ -8,6 +8,7 @@ import FingerprintIndices from '../components/analysis/FingerprintIndices'
 import MoleculeOverlay from '../components/analysis/MoleculeOverlay'
 import SecondaryRetrieval from '../components/analysis/SecondaryRetrieval'
 import Ablation from '../components/analysis/Ablation'
+import ModelSelector from '../components/common/ModelSelector'
 import './AnalysisPage.css'
 
 const DEFAULT_THRESHOLD = 0.5
@@ -52,6 +53,7 @@ function AnalysisPage() {
     mass_spec,
     mw,
     predictedFp,
+    selectedModelId,
   } = useMainPageStore()
   
   // Track which result we've already processed to prevent duplicate calls
@@ -132,6 +134,7 @@ function AnalysisPage() {
           smiles: selectedMolecule.smiles,
           bit_threshold: DEFAULT_THRESHOLD,
           reference_fp: predictedFp ? Array.from(predictedFp) : undefined,
+          model_id: selectedModelId ?? undefined,
         }
 
         const response = await api.ablation(payload)
@@ -217,6 +220,7 @@ function AnalysisPage() {
       analyzeMutation.mutate({
         smiles: result.smiles,
         retrieved_fp: retrievedFp,
+        model_id: selectedModelId ?? undefined,
       })
     }
     
@@ -225,7 +229,14 @@ function AnalysisPage() {
       processedResultRef.current = null
       clearAnalysis()
     }
-  }, [result, setSelectedMolecule, setRetrievedFpIndices, setBitEnvironments, clearAnalysis])
+  }, [
+    result,
+    selectedModelId,
+    setSelectedMolecule,
+    setRetrievedFpIndices,
+    setBitEnvironments,
+    clearAnalysis,
+  ])
   
   const handleBack = () => {
     navigate(ROUTES.MAIN)
@@ -245,6 +256,9 @@ function AnalysisPage() {
       <header className="analysis-header">
         <button onClick={handleBack}>← Back to Main</button>
         <h2>Analysis: {selectedMolecule.name || selectedMolecule.smiles || `Molecule #${selectedMolecule.index}`}</h2>
+        <div style={{ marginLeft: 'auto' }}>
+          <ModelSelector />
+        </div>
       </header>
       
       <div className="molecule-info-section">

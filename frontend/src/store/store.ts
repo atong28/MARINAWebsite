@@ -2,7 +2,7 @@
  * Zustand store for global application state.
  */
 import { create } from 'zustand'
-import { ResultCard } from '../services/api'
+import { ModelInfo, ResultCard } from '../services/api'
 
 interface SpectralDataSnapshot {
   hsqc: number[]
@@ -13,6 +13,11 @@ interface SpectralDataSnapshot {
 }
 
 interface MainPageState {
+  // Model selection
+  availableModels: ModelInfo[] | null
+  defaultModelId: string | null
+  selectedModelId: string | null
+
   // Spectral input data
   hsqc: number[]
   h_nmr: number[]
@@ -37,6 +42,10 @@ interface MainPageState {
   analysisSource: 'prediction' | 'smiles-search' | null
   
   // Actions
+  setAvailableModels: (models: ModelInfo[], defaultModelId: string) => void
+  initializeModelSelection: (models: ModelInfo[], defaultModelId: string) => void
+  setSelectedModelId: (modelId: string) => void
+
   setHSQC: (data: number[]) => void
   setHNMR: (data: number[]) => void
   setCNMR: (data: number[]) => void
@@ -86,6 +95,10 @@ interface AnalysisPageState {
 }
 
 export const useMainPageStore = create<MainPageState>((set) => ({
+  availableModels: null,
+  defaultModelId: null,
+  selectedModelId: null,
+
   hsqc: [],
   h_nmr: [],
   c_nmr: [],
@@ -100,6 +113,51 @@ export const useMainPageStore = create<MainPageState>((set) => ({
   retrievalMwMax: null,
   analysisSource: null,
   
+  setAvailableModels: (models, defaultModelId) =>
+    set({
+      availableModels: models,
+      defaultModelId,
+    }),
+
+  initializeModelSelection: (models, defaultModelId) => {
+    const storageKey = 'marina.selectedModelId'
+    const stored = (() => {
+      try {
+        return localStorage.getItem(storageKey)
+      } catch {
+        return null
+      }
+    })()
+
+    const knownIds = new Set(models.map((m) => m.id))
+    const selected =
+      stored && knownIds.has(stored)
+        ? stored
+        : defaultModelId
+
+    set({
+      availableModels: models,
+      defaultModelId,
+      selectedModelId: selected,
+    })
+
+    try {
+      localStorage.setItem(storageKey, selected)
+    } catch {
+      // ignore storage errors (private mode, quota, etc.)
+    }
+  },
+
+  setSelectedModelId: (modelId) => {
+    const storageKey = 'marina.selectedModelId'
+    set({ selectedModelId: modelId })
+    try {
+      localStorage.setItem(storageKey, modelId)
+    } catch {
+      // ignore storage errors
+    }
+  },
+
   setHSQC: (data) => set({ hsqc: data }),
   setHNMR: (data) => set({ h_nmr: data }),
   setCNMR: (data) => set({ c_nmr: data }),

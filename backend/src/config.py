@@ -1,5 +1,4 @@
 import os
-from pathlib import Path
 
 # General
 DEFAULT_TOP_K = int(os.getenv("DEFAULT_TOP_K", "10"))
@@ -17,12 +16,19 @@ RDKIT_ENABLED = os.getenv("RDKIT_ENABLED", "true").lower() == "true"
 
 # Paths
 DATA_DIR = os.getenv("DATA_DIR", "data")
-METADATA_PATH = os.path.join(DATA_DIR, "metadata.json")
+MODELS_JSON_PATH = os.getenv(
+    "MODELS_JSON_PATH",
+    os.path.join(DATA_DIR, "models.json"),
+)
+# Per-model root (e.g. data/marina_best). Fallback when models.json missing.
+MODEL_ROOT = os.getenv("MODEL_ROOT", os.path.join(DATA_DIR, "marina_best"))
+DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "marina_best")
 
-# Model / fingerprint artifacts
-CKPT_PATH = os.getenv("CKPT_PATH", os.path.join(DATA_DIR, "best.ckpt"))
-PARAMS_PATH = os.getenv("PARAMS_PATH", os.path.join(DATA_DIR, "params.json"))
-RETRIEVAL_PATH = os.getenv("RETRIEVAL_PATH", os.path.join(DATA_DIR, "retrieval.pkl"))
+# Model / fingerprint artifacts (derived from MODEL_ROOT)
+CKPT_PATH = os.getenv("CKPT_PATH", os.path.join(MODEL_ROOT, "best.ckpt"))
+PARAMS_PATH = os.getenv("PARAMS_PATH", os.path.join(MODEL_ROOT, "params.json"))
+RETRIEVAL_PATH = os.getenv("RETRIEVAL_PATH", os.path.join(MODEL_ROOT, "retrieval.pkl"))
+METADATA_PATH = os.getenv("METADATA_PATH", os.path.join(MODEL_ROOT, "metadata.json"))
 
 # Server
 # Port configuration: Use BACKEND_PORT from root .env file (single source of truth)

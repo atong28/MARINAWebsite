@@ -1,6 +1,6 @@
 import { useMemo, useCallback, useState, useRef, useEffect } from 'react'
 import UnifiedSpreadsheetTable from '../spreadsheet/UnifiedSpreadsheetTable'
-import { useAnalysisPageStore } from '../../store/store'
+import { useAnalysisPageStore, useMainPageStore } from '../../store/store'
 import { useAblation } from '../../services/api'
 import SimilarityMap from './SimilarityMap'
 import BitComparison from './BitComparison'
@@ -37,6 +37,7 @@ function Ablation() {
     originalSimilarityMap,
     originalSpectralData,
   } = useAnalysisPageStore()
+  const selectedModelId = useMainPageStore((s) => s.selectedModelId)
 
   // Ensure we always use the latest store state for props
   // Using a selector ensures we always get the latest state and component re-renders on changes
@@ -111,6 +112,7 @@ function Ablation() {
       smiles: selectedMolecule.smiles,
       bit_threshold: DEFAULT_THRESHOLD,
       reference_fp: originalPredictedFp ?? undefined,
+      model_id: selectedModelId ?? undefined,
     }
 
     ablationMutation.mutate(payload)

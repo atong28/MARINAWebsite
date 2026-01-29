@@ -24,6 +24,7 @@ python-lmdb = ">=1.7.5,<2"
 requests = ">=2.32.5,<3"
 tqdm = ">=4.67.1,<5"
 pytest = ">=8.4.2,<9"
+tyro = ">=1.0.5,<2"
 
 [pypi-dependencies]
 torch = { version = "==2.7.1", index = "https://download.pytorch.org/whl/cpu" }

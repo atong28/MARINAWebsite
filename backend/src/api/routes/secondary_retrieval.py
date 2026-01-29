@@ -2,201 +2,118 @@
 Secondary retrieval endpoint using difference fingerprint.
 """
 import logging
-import torch
-from fastapi import APIRouter, HTTPException, status, Request
 
-from src.domain.models.analysis_result import SecondaryRetrievalRequest, SecondaryRetrievalResponse
-from src.services.model_service import ModelService
-from src.services.metadata_service import MetadataService
-from src.services.molecule_renderer import MoleculeRenderer
-from src.services.result_builder import build_result_card
-from src.domain.ranker import RankingSet
-from src.domain.fingerprint.fp_utils import tanimoto_similarity
-from src.config import MOLECULE_IMG_SIZE, MAX_TOP_K
+import torch
+from fastapi import APIRouter, HTTPException, Request, status
+
 from src.api.middleware.rate_limit import get_limiter
+from src.config import MAX_TOP_K, MOLECULE_IMG_SIZE
+from src.domain.models.analysis_result import (
+    SecondaryRetrievalRequest,
+    SecondaryRetrievalResponse,
+)
+from src.domain.ranker import RankingSet
+from src.services.model_manifest import resolve_and_validate_model_id
+from src.services.model_service import ModelService
+from src.services.molecule_renderer import MoleculeRenderer
+from src.services.retrieval_helpers import build_result_cards
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
-
-# Get limiter instance
 limiter = get_limiter()
 
 
-@router.post("/secondary-retrieval", response_model=SecondaryRetrievalResponse, status_code=status.HTTP_200_OK)
+@router.post(
+    "/secondary-retrieval",
+    response_model=SecondaryRetrievalResponse,
+    status_code=status.HTTP_200_OK,
+)
 @limiter.limit("20 per minute")
 async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest):
-    """Secondary retrieval endpoint using difference fingerprint (predicted - overlap)."""
-    # Check if model is ready
+    """Secondary retrieval using difference fingerprint (predicted - overlap)."""
+    mid, err = resolve_and_validate_model_id(data.model_id)
+    if err is not None:
+        code, detail = err
+        raise HTTPException(status_code=code, detail=detail)
+
     model_service = ModelService.instance()
-    if not model_service.is_ready():
+    if not model_service.is_ready(mid):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Model is not ready. Please try again in a moment."
+            detail="Model is not ready. Try again in a moment.",
         )
-    
+
     try:
-        # Validate k
         k = data.k
         if k > MAX_TOP_K:
             k = MAX_TOP_K
-        
-        # Get fingerprints from request
+
         predicted_fp = data.predicted_fp
         retrieved_fp = data.retrieved_fp
-        
         if not predicted_fp or not retrieved_fp:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Missing required fields: predicted_fp, retrieved_fp"
+                detail="Missing required fields: predicted_fp, retrieved_fp",
             )
-        
-        # Convert to tensors
+
         predicted_tensor = torch.tensor(predicted_fp, dtype=torch.float32)
         retrieved_tensor = torch.tensor(retrieved_fp, dtype=torch.float32)
-        
-        # Ensure fingerprints are in valid range [0, 1]
         predicted_tensor = torch.clamp(predicted_tensor, 0.0, 1.0)
         retrieved_tensor = torch.clamp(retrieved_tensor, 0.0, 1.0)
-        
-        # Compute overlap (element-wise minimum for binary/probabilistic fingerprints)
         overlap = torch.min(predicted_tensor, retrieved_tensor)
-        
-        # Compute difference: predicted_fp - overlap
         difference_fp = predicted_tensor - overlap
         difference_fp = torch.clamp(difference_fp, 0.0, 1.0)
-        
-        # Check if difference fingerprint is all zeros
+
         if difference_fp.sum() < 1e-6:
-            logger.warning("Difference fingerprint is all zeros, returning empty results")
+            logger.warning("Difference fingerprint is all zeros")
             return SecondaryRetrievalResponse(
                 results=[],
                 total_count=0,
-                difference_fp=difference_fp.tolist()
+                difference_fp=difference_fp.tolist(),
             )
-        
-        # Use difference fingerprint directly (already in [0,1] range)
-        # RankingSet will handle normalization internally
-        difference_prob = difference_fp
-        
-        # Get rankingset
-        rankingset = model_service.get_rankingset()
+
+        rankingset = model_service.get_rankingset(mid)
         if rankingset is None:
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Rankingset not available"
+                detail="Rankingset not available",
             )
-        
-        # Use RankingSet to retrieve results
         ranker = RankingSet(store=rankingset, metric="cosine")
-        
-        # Retrieve top-k indices and similarity scores using difference fingerprint
-        sims, idxs = ranker.retrieve_with_scores(difference_prob.unsqueeze(0), n=k)
-
-        # Convert to 1D tensors for convenience
+        sims, idxs = ranker.retrieve_with_scores(difference_fp.unsqueeze(0), n=k)
         sims = sims.squeeze()
         idxs = idxs.squeeze()
-        
-        # Build results
-        results = []
-        metadata_service = MetadataService.instance()
+        sim_list = sims.tolist()
+        idx_list = idxs.tolist()
+        if not isinstance(sim_list, list):
+            sim_list = [sim_list]
+        if not isinstance(idx_list, list):
+            idx_list = [idx_list]
+        pairs = [(int(idx_list[i]), float(sim_list[i])) for i in range(len(sim_list))]
+        session = model_service.get_session(mid)
+        fp_loader = model_service.get_fp_loader(mid)
         molecule_renderer = MoleculeRenderer.instance()
-        fp_loader = model_service.get_fp_loader()
-
-        def _dense_from_indices(length: int, indices: list[int]) -> torch.Tensor:
-          vec = torch.zeros(length, dtype=torch.float32)
-          if not indices:
-              return vec
-          for j in indices:
-              if 0 <= j < length:
-                  vec[j] = 1.0
-          return vec
-        
-        for i, idx in enumerate(idxs.tolist()):
-            entry = metadata_service.get_entry(idx)
-            if not entry:
-                continue
-            
-            result_smiles = metadata_service.get_smiles(idx)
-            if not result_smiles:
-                continue
-            
-            # Render molecule with difference fingerprint highlighting
-            try:
-                enhanced_svg = molecule_renderer.render(
-                    result_smiles,
-                    predicted_fp=difference_prob,
-                    fp_loader=fp_loader,
-                    img_size=MOLECULE_IMG_SIZE
-                )
-            except Exception as e:
-                logger.warning(f"Failed to render molecule: {e}")
-                enhanced_svg = None
-            
-            # Similarity
-            similarity_val = sims[i] if i < len(sims) and sims[i] is not None else 0.0
-            try:
-                cosine_sim = float(similarity_val)
-                if not isinstance(cosine_sim, (int, float)) or cosine_sim != cosine_sim:
-                    cosine_sim = 0.0
-            except (ValueError, TypeError):
-                cosine_sim = 0.0
-
-            cosine_sim = max(0.0, min(1.0, cosine_sim))
-
-            # Build retrieved indices from rankingset row for this idx
-            retrieved_indices: list[int] = []
-            try:
-                if rankingset is not None:
-                    if rankingset.layout == torch.sparse_csr:
-                        row_start = rankingset.crow_indices()[idx]
-                        row_end = rankingset.crow_indices()[idx + 1]
-                        if row_start < row_end:
-                            col_indices = rankingset.col_indices()[row_start:row_end]
-                            retrieved_indices = col_indices.cpu().tolist()
-                    else:
-                        row_tensor = rankingset[idx].cpu()
-                        retrieved_indices = torch.nonzero(row_tensor > 0.5, as_tuple=False).squeeze(-1).tolist()
-            except Exception as e:
-                logger.warning(f"Failed to get retrieved indices for secondary retrieval idx {idx}: {e}")
-
-            # Tanimoto between difference fingerprint and retrieved vector
-            tanimoto_sim = 0.0
-            try:
-                if retrieved_indices:
-                    retrieved_vec = _dense_from_indices(difference_prob.numel(), retrieved_indices)
-                    tanimoto_sim = tanimoto_similarity(difference_prob, retrieved_vec)
-            except Exception as e:
-                logger.warning(f"Failed to compute Tanimoto similarity for idx {idx}: {e}")
-
-            # Build card
-            card = build_result_card(
-                idx,
-                entry,
-                cosine_sim,
-                enhanced_svg,
-                cosine_similarity=cosine_sim,
-                tanimoto_similarity=tanimoto_sim,
-            )
-            card['retrieved_molecule_fp_indices'] = retrieved_indices
-            results.append(card)
-        
-        # Pagination
-        offset = 0
-        limit = len(results)
-        paged_results = results[offset:offset + limit]
-        
-        return SecondaryRetrievalResponse(
-            results=paged_results,
-            total_count=len(results),
-            difference_fp=difference_fp.tolist()
+        results = build_result_cards(
+            session,
+            rankingset,
+            pairs,
+            difference_fp,
+            fp_loader,
+            molecule_renderer,
+            img_size=MOLECULE_IMG_SIZE,
+            max_cards=k,
+            include_plain_svg=False,
         )
-        
+
+        return SecondaryRetrievalResponse(
+            results=results,
+            total_count=len(results),
+            difference_fp=difference_fp.tolist(),
+        )
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Secondary retrieval error: {e}", exc_info=True)
+        logger.error("Secondary retrieval error: %s", e, exc_info=True)
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail=str(e)
+            detail=str(e),
         )
-

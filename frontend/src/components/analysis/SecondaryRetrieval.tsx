@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { useSecondaryRetrieval } from '../../services/api'
 import ResultsGrid from '../results/ResultsGrid'
+import { useMainPageStore } from '../../store/store'
 import './SecondaryRetrieval.css'
 
 interface SecondaryRetrievalProps {
@@ -11,6 +12,7 @@ interface SecondaryRetrievalProps {
 
 function SecondaryRetrieval({ predictedFp, retrievedFpIndices, k = 10 }: SecondaryRetrievalProps) {
   const [showResults, setShowResults] = useState(false)
+  const selectedModelId = useMainPageStore((s) => s.selectedModelId)
   
   // Calculate difference bits: bits that are 1 in predicted_fp but 0 in retrieved_fp
   const differenceBits = useMemo(() => {
@@ -81,6 +83,7 @@ function SecondaryRetrieval({ predictedFp, retrievedFpIndices, k = 10 }: Seconda
       predicted_fp: paddedPredicted,
       retrieved_fp: paddedRetrieved,
       k,
+      model_id: selectedModelId ?? undefined,
     })
   }
   

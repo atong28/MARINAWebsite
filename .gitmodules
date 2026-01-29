@@ -1,0 +1,3 @@
+[submodule "backend/src/marina"]
+	path = backend/src/marina
+	url = git@github.com:atong28/SMART-Moonshot.git

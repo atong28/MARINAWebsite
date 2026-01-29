@@ -13,6 +13,7 @@ from src.domain.models.analysis_result import (
     CustomSmilesCardRequest,
     CustomSmilesCardResponse,
 )
+from src.services.model_manifest import resolve_and_validate_model_id
 from src.services.model_service import ModelService
 from src.services.molecule_renderer import MoleculeRenderer
 from src.services.result_builder import build_result_card
@@ -33,15 +34,18 @@ limiter = get_limiter()
 @limiter.limit("10 per minute")
 async def analyze(request: Request, data: AnalysisRequest):
     """Analysis endpoint for detailed molecular fingerprint analysis."""
-    # Guard clause: Check if model is ready
+    mid, err = resolve_and_validate_model_id(data.model_id)
+    if err is not None:
+        code, detail = err
+        raise HTTPException(status_code=code, detail=detail)
+
     model_service = ModelService.instance()
-    if not model_service.is_ready():
+    if not model_service.is_ready(mid):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model is not ready. Please try again in a moment."
         )
     
-    # Guard clause: Validate SMILES
     target_smiles = data.smiles.strip()
     if not target_smiles:
         raise HTTPException(
@@ -49,9 +53,7 @@ async def analyze(request: Request, data: AnalysisRequest):
             detail="SMILES string cannot be empty"
         )
     
-    # Guard clause: Validate retrieved_fp is provided
     retrieved_fp = data.retrieved_fp
-    
     if retrieved_fp is None:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
@@ -64,8 +66,7 @@ async def analyze(request: Request, data: AnalysisRequest):
             detail="retrieved_fp array cannot be empty"
         )
     
-    # Guard clause: Get fp_loader and validate it exists
-    fp_loader = model_service.get_fp_loader()
+    fp_loader = model_service.get_fp_loader(mid)
     if fp_loader is None:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
@@ -138,8 +139,13 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
     Build a single result card for an arbitrary SMILES using a provided reference
     fingerprint (e.g., predicted or query FP), without running a new retrieval.
     """
+    mid, err = resolve_and_validate_model_id(data.model_id)
+    if err is not None:
+        code, detail = err
+        raise HTTPException(status_code=code, detail=detail)
+
     model_service = ModelService.instance()
-    if not model_service.is_ready():
+    if not model_service.is_ready(mid):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model is not ready. Please try again in a moment.",
@@ -159,7 +165,7 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
             detail="reference_fp cannot be empty",
         )
 
-    fp_loader = model_service.get_fp_loader()
+    fp_loader = model_service.get_fp_loader(mid)
     if fp_loader is None or not isinstance(fp_loader, EntropyFPLoader):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,

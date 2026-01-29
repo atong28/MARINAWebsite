@@ -69,6 +69,7 @@ class PredictRequest(BaseModel):
     """Request model for /predict endpoint"""
     raw: SpectralDataInput = Field(..., description="Spectral data input")
     k: int = Field(default=10, ge=1, le=50, description="Number of results to retrieve")
+    model_id: Optional[str] = Field(None, description="Model to use (default from models.json)")
     mw_min: Optional[float] = Field(
         None,
         gt=0,
@@ -85,6 +86,7 @@ class SmilesSearchRequest(BaseModel):
     """Request model for /smiles-search endpoint"""
     smiles: str = Field(..., min_length=1, description="SMILES string to search")
     k: int = Field(default=10, ge=1, le=50, description="Number of results to retrieve")
+    model_id: Optional[str] = Field(None, description="Model to use (default from models.json)")
     mw_min: Optional[float] = Field(
         None,
         gt=0,

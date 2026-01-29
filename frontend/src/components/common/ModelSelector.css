@@ -1,0 +1,25 @@
+.model-selector {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.model-selector.compact .model-selector-label {
+  font-size: 0.9em;
+  color: #666;
+}
+
+.model-selector-select {
+  padding: 6px 10px;
+  border: 1px solid #ddd;
+  border-radius: 6px;
+  background: white;
+  font-size: 0.9em;
+  max-width: 320px;
+}
+
+.model-selector-loading {
+  font-size: 0.9em;
+  color: #666;
+}
+

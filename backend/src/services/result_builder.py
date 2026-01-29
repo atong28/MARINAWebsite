@@ -24,17 +24,21 @@ def build_result_card(
     if smiles is None or smiles == 'N/A':
         smiles = entry.get('canonical_2d_smiles')
     
-    # Compute exact mass using RDKit
+    # Prefer metadata mw; RDKit fallback
     exact_mass = None
-    if smiles:
+    m = entry.get("mw")
+    if isinstance(m, (int, float)):
+        try:
+            exact_mass = float(m)
+        except Exception:
+            pass
+    if exact_mass is None and smiles:
         try:
             mol = Chem.MolFromSmiles(smiles)
             if mol:
                 exact_mass = Descriptors.ExactMolWt(mol)
-        except Exception as e:
+        except Exception:
             pass
-    if exact_mass is None:
-        logger.error(f"Exact mass is None for smiles: {smiles}")
     
     # Primary name/link
     primary_name = None

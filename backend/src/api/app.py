@@ -36,6 +36,7 @@ limiter = setup_rate_limiting(app)
 
 from src.api.routes import (
     health,
+    models as models_router,
     predict,
     smiles_search,
     analyze,
@@ -46,6 +47,7 @@ from src.api.routes import (
 
 # Include routers with /api prefix
 app.include_router(health.router, prefix="/api", tags=["health"])
+app.include_router(models_router.router, prefix="/api", tags=["models"])
 app.include_router(predict.router, prefix="/api", tags=["prediction"])
 app.include_router(smiles_search.router, prefix="/api", tags=["search"])
 app.include_router(analyze.router, prefix="/api", tags=["analysis"])
@@ -59,15 +61,30 @@ _server_start_time = time.time()
 # Initialize model in background on startup
 @app.on_event("startup")
 async def startup_event():
-    """Initialize model on startup."""
+    """Bootstrap from models.json when present; load default model if marina."""
     logger.info("Starting MARINA backend...")
     try:
-        # Load model in background
-        model_service = ModelService.instance()
-        model_service.ensure_loaded()
-        logger.info("Model loaded successfully")
+        from src.services.model_manifest import (
+            get_default_model_id,
+            get_model_info,
+            load_models_json,
+        )
+
+        load_models_json()
+        default_id = get_default_model_id()
+        info = get_model_info(default_id)
+        if info is not None and info.type != "marina":
+            logger.warning(
+                "Default model %s has type %r (not marina); skipping load.",
+                default_id,
+                info.type,
+            )
+        else:
+            model_service = ModelService.instance()
+            model_service.ensure_loaded(default_id)
+            logger.info("Model %s loaded successfully", default_id)
     except Exception as e:
-        logger.error(f"Failed to load model: {e}", exc_info=True)
+        logger.error("Failed to load model: %s", e, exc_info=True)
 
 if __name__ == "__main__":
     uvicorn.run(

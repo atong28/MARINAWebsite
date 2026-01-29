@@ -15,7 +15,7 @@ function ResultsGrid({ results, onAnalyze, showAnalyzeButton = true }: ResultsGr
       <div className="results-list">
         {results.map((result, index) => (
           <ResultCardComponent
-            key={result.index}
+            key={`${result.index}-${result.smiles}`}
             result={result}
             position={index + 1}
             onAnalyze={() => onAnalyze(index)}

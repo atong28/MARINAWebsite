@@ -1,33 +1,26 @@
-import json
 import logging
 import threading
-from typing import Dict, Any
+from typing import Any, Dict
 
 import torch
-import torch.nn.functional as F
 
 from src.domain.data import collate
 from src.domain.model_session import ModelSession
+from src.services.model_service import ModelService
 
 logger = logging.getLogger(__name__)
-_session_lock = threading.Lock()
-_session: ModelSession | None = None
+_forward_lock = threading.Lock()
 
 
-def get_session() -> ModelSession:
-    """
-    Get or create the singleton ModelSession for this process.
-    """
-    global _session
-    if _session is not None:
-        return _session
-    with _session_lock:
-        if _session is None:
-            _session = ModelSession.from_paths()
-    return _session
+def get_session(model_id: str | None = None) -> ModelSession:
+    """Get ModelSession for model_id (default model if None) via ModelService."""
+    return ModelService.instance().get_session(model_id)
 
 
-def load_model(ckpt_path: str = "data/best.ckpt", params_path: str = "data/params.json") -> torch.nn.Module:
+def load_model(
+    ckpt_path: str = "data/best.ckpt",
+    params_path: str = "data/params.json",
+) -> torch.nn.Module:
     """
     Backward-compatible shim that returns the underlying model.
     The path arguments are currently ignored in favor of central config.
@@ -41,7 +34,6 @@ def _preprocess_raw_inputs(raw_inputs: Dict[str, Any]) -> Dict[str, torch.Tensor
     """
     processed: Dict[str, torch.Tensor] = {}
     for k_mod, v in raw_inputs.items():
-        print(k_mod, v)
         if isinstance(v, list):
             tensor = torch.tensor(v, dtype=torch.float)
             # Reshape sequence data to 2D (num_peaks, features_per_peak)
@@ -94,7 +86,7 @@ def _run_model(session: ModelSession, processed: Dict[str, torch.Tensor]) -> tor
         [(processed, torch.zeros((session.args.out_dim,), dtype=torch.float))]
     )
 
-    with _session_lock, torch.no_grad():
+    with _forward_lock, torch.no_grad():
         logger.info("Calling model forward...")
         out = session.model(batch_inputs)
         logger.info(f"Model output shape: {out.shape}")
@@ -122,12 +114,16 @@ def _retrieve_top_k(session: ModelSession, pred_fp: torch.Tensor, k: int):
     return sims.tolist(), idxs.tolist(), pred.tolist()
 
 
-def predict_from_raw(raw_inputs: Dict[str, Any], k: int = 5):
+def predict_from_raw(
+    raw_inputs: Dict[str, Any],
+    k: int = 5,
+    model_id: str | None = None,
+):
     """Accepts a raw input dict (same spec as SpectralInputLoader.load output) and returns top-k."""
     logger.info("predict_from_raw called with k=%r (type: %s)", k, type(k))
     logger.info("raw_inputs keys: %s", list(raw_inputs.keys()))
 
-    session = get_session()
+    session = get_session(model_id)
 
     processed = _preprocess_raw_inputs(raw_inputs)
     logger.info("Processed inputs: %s", list(processed.keys()))

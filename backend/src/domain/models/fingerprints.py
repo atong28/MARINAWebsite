@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field
 
 class FingerprintIndicesRequest(BaseModel):
     smiles: str = Field(..., min_length=1, description="SMILES string")
+    model_id: Optional[str] = Field(None, description="Model to use (default from models.json)")
 
 
 class FingerprintIndicesResponse(BaseModel):
@@ -21,6 +22,7 @@ class FingerprintBatchRequest(BaseModel):
     smiles_list: List[str] = Field(
         ..., min_length=1, description="List of SMILES strings to process"
     )
+    model_id: Optional[str] = Field(None, description="Model to use (default from models.json)")
 
 
 class FingerprintBatchResponse(BaseModel):

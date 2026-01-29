@@ -1,6 +1,6 @@
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { usePredict, useSmilesSearch, useHealth, api } from '../services/api'
+import { usePredict, useSmilesSearch, useHealth, api, cancelInFlight } from '../services/api'
 import { useMainPageStore } from '../store/store'
 import { getAvailableExamples, loadExample, type ExampleMetadata } from '../services/exampleLoader'
 import { ROUTES } from '../routes'
@@ -10,6 +10,7 @@ import CustomSmilesBox from '../components/spectral/CustomSmilesBox'
 import ResultsGrid from '../components/results/ResultsGrid'
 import CustomResultsGrid from '../components/results/CustomResultsGrid'
 import StatusIndicator from '../components/common/StatusIndicator'
+import ModelSelector from '../components/common/ModelSelector'
 import './MainPage.css'
 
 const API_DOCS_URL = '/docs'
@@ -24,6 +25,7 @@ function MainPage() {
   const [hasInvalidSpreadsheet, setHasInvalidSpreadsheet] = useState(false)
   
   const {
+    selectedModelId,
     hsqc,
     h_nmr,
     c_nmr,
@@ -48,16 +50,25 @@ function MainPage() {
   const [customSmiles, setCustomSmiles] = useState('')
   const [customResultError, setCustomResultError] = useState<string | null>(null)
   const [isCustomLoading, setIsCustomLoading] = useState(false)
+
+  // Monotonic request sequencing to ensure only latest request updates UI state.
+  const requestSeqRef = useRef(0)
+  const latestPredictSeqRef = useRef<number | null>(null)
+  const latestSmilesSeqRef = useRef<number | null>(null)
   
   const { data: health } = useHealth()
   const predictMutation = usePredict({
     onSuccess: (data) => {
+      if (latestPredictSeqRef.current === null) return
+      if (latestPredictSeqRef.current !== requestSeqRef.current) return
       setResults(data.results, data.pred_fp || null, null)
       setAnalysisSource('prediction')
     },
   })
   const smilesSearchMutation = useSmilesSearch({
     onSuccess: (data) => {
+      if (latestSmilesSeqRef.current === null) return
+      if (latestSmilesSeqRef.current !== requestSeqRef.current) return
       setResults(data.results, null, data.query_fp || null)
       setAnalysisSource('smiles-search')
     },
@@ -93,7 +104,15 @@ function MainPage() {
       retrievalMwMax !== undefined &&
       retrievalMwMin > retrievalMwMax)
   
-  const handlePredict = () => {
+  const handlePredict = useCallback(() => {
+    // New request starts: cancel other in-flight search to avoid stale writes/races.
+    cancelInFlight('smilesSearch')
+    cancelInFlight('predict')
+    requestSeqRef.current += 1
+    latestPredictSeqRef.current = requestSeqRef.current
+
+    setCustomResultError(null)
+
     // Sanitize arrays by filtering out NaN values
     const sanitizedHSQC = filterNaNValues(hsqc)
     const sanitizedHNMR = filterNaNValues(h_nmr)
@@ -111,6 +130,7 @@ function MainPage() {
     }
     
     const payload: any = { raw, k }
+    if (selectedModelId) payload.model_id = selectedModelId
     if (retrievalMwMin !== null && retrievalMwMin !== undefined && !Number.isNaN(retrievalMwMin) && isFinite(retrievalMwMin)) {
       payload.mw_min = retrievalMwMin
     }
@@ -118,11 +138,31 @@ function MainPage() {
       payload.mw_max = retrievalMwMax
     }
     predictMutation.mutate(payload)
-  }
+  }, [
+    c_nmr,
+    h_nmr,
+    hsqc,
+    mass_spec,
+    mw,
+    k,
+    retrievalMwMin,
+    retrievalMwMax,
+    selectedModelId,
+    predictMutation,
+    setCustomResultError,
+  ])
   
-  const handleSmilesSearch = () => {
+  const handleSmilesSearch = useCallback(() => {
     if (!smilesInput.trim()) return
+    cancelInFlight('predict')
+    cancelInFlight('smilesSearch')
+    requestSeqRef.current += 1
+    latestSmilesSeqRef.current = requestSeqRef.current
+
+    setCustomResultError(null)
+
     const payload: any = { smiles: smilesInput.trim(), k }
+    if (selectedModelId) payload.model_id = selectedModelId
     if (retrievalMwMin !== null && retrievalMwMin !== undefined && !Number.isNaN(retrievalMwMin) && isFinite(retrievalMwMin)) {
       payload.mw_min = retrievalMwMin
     }
@@ -130,20 +170,28 @@ function MainPage() {
       payload.mw_max = retrievalMwMax
     }
     smilesSearchMutation.mutate(payload)
-  }
+  }, [
+    smilesInput,
+    k,
+    retrievalMwMin,
+    retrievalMwMax,
+    selectedModelId,
+    smilesSearchMutation,
+    setCustomResultError,
+  ])
   
-  const handleAnalyze = (index: number) => {
+  const handleAnalyze = useCallback((index: number) => {
     const result = results[index]
     if (!result) return
     navigate(ROUTES.ANALYSIS, { state: { result, index } })
-  }
+  }, [navigate, results])
 
-  const handleCustomAnalyze = (index: number) => {
+  const handleCustomAnalyze = useCallback((index: number) => {
     const result = customResults[index]
     if (!result) return
     // Index is not meaningful for custom results, but AnalysisPage only needs the result itself.
     navigate(ROUTES.ANALYSIS, { state: { result, index: 0 } })
-  }
+  }, [customResults, navigate])
 
   const handleLoadExample = async () => {
     if (!selectedExample) return
@@ -176,6 +224,7 @@ function MainPage() {
           >
             API Docs
           </a>
+          <ModelSelector />
           <StatusIndicator health={health} />
         </div>
         <h1>
@@ -304,6 +353,7 @@ function MainPage() {
                     const response = await api.customSmilesCard({
                       smiles: trimmed,
                       reference_fp: refFp,
+                      model_id: state.selectedModelId ?? undefined,
                     })
                     if (response.result) {
                       addCustomResult(response.result)

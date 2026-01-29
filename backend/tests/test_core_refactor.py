@@ -1,3 +1,4 @@
+import pytest
 import torch
 
 from src.domain.ranker import RankingSet

@@ -1,3 +1,4 @@
+import { memo, useMemo } from 'react'
 import { ResultCard as ResultCardType } from '../../services/api'
 import MoleculeViewer from './MoleculeViewer'
 import './ResultCard.css'
@@ -20,16 +21,20 @@ function ResultCard({
   onRemove,
 }: ResultCardProps) {
   const { database_links } = result
-  const hasDatabaseLinks = database_links && (
-    database_links.coconut || database_links.lotus || database_links.npmrd
-  )
+  const hasDatabaseLinks = useMemo(() => {
+    return Boolean(
+      database_links &&
+        (database_links.coconut || database_links.lotus || database_links.npmrd),
+    )
+  }, [database_links])
 
-  const cosine = typeof result.cosine_similarity === 'number'
-    ? result.cosine_similarity
-    : result.similarity
-  const tanimoto = typeof result.tanimoto_similarity === 'number'
-    ? result.tanimoto_similarity
-    : undefined
+  const cosine = useMemo(() => {
+    return typeof result.cosine_similarity === 'number' ? result.cosine_similarity : result.similarity
+  }, [result.cosine_similarity, result.similarity])
+
+  const tanimoto = useMemo(() => {
+    return typeof result.tanimoto_similarity === 'number' ? result.tanimoto_similarity : undefined
+  }, [result.tanimoto_similarity])
   const positionLabel = position > 0 ? `#${position}` : 'Custom'
   
   return (
@@ -114,5 +119,5 @@ function ResultCard({
   )
 }
 
-export default ResultCard
+export default memo(ResultCard)
 

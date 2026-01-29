@@ -16,6 +16,7 @@ from src.domain.drawing.draw import (
 )
 from src.domain.models.analysis_result import AblationRequest, AblationResponse
 from src.domain.predictor import predict_from_raw
+from src.services.model_manifest import resolve_and_validate_model_id
 from src.services.model_service import ModelService
 
 logger = logging.getLogger(__name__)
@@ -46,9 +47,13 @@ def _build_raw_input(raw: AblationRequest) -> Dict[str, Any]:
 @limiter.limit("30 per minute")
 async def run_ablation(request: Request, data: AblationRequest) -> AblationResponse:
     """Run an ablation prediction using modified spectral data."""
+    mid, err = resolve_and_validate_model_id(data.model_id)
+    if err is not None:
+        code, detail = err
+        raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
-    if not model_service.is_ready():
+    if not model_service.is_ready(mid):
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="Model is not ready. Please try again in a moment.",
@@ -62,7 +67,7 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
         )
 
     try:
-        prediction_output = predict_from_raw(raw_data, k=1)
+        prediction_output = predict_from_raw(raw_data, k=1, model_id=mid)
     except Exception as exc:
         logger.error("Ablation prediction failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -89,7 +94,7 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
     else:
         pred_fp_list = list(pred_fp)
 
-    fp_loader = model_service.get_fp_loader()
+    fp_loader = model_service.get_fp_loader(mid)
     if fp_loader is None:
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,

@@ -8,6 +8,8 @@ import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tan
 // For development, VITE_API_BASE can be set to full URL (e.g., http://localhost:5000/api)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
+type AbortableRequestInit = RequestInit & { signal?: AbortSignal }
+
 // Types (will be generated from OpenAPI schema in production)
 export interface SpectralDataInput {
   hsqc?: number[]
@@ -22,6 +24,7 @@ export interface PredictRequest {
   k?: number
   mw_min?: number
   mw_max?: number
+  model_id?: string
 }
 
 export interface ResultCard {
@@ -57,6 +60,7 @@ export interface SmilesSearchRequest {
   k?: number
   mw_min?: number
   mw_max?: number
+  model_id?: string
 }
 
 export interface SmilesSearchResponse {
@@ -72,6 +76,7 @@ export interface AnalysisRequest {
   smiles: string
   predicted_fp?: number[]
   retrieved_fp?: number[]
+  model_id?: string
 }
 
 export interface AnalysisResponse {
@@ -86,10 +91,24 @@ export interface HealthResponse {
   uptime_seconds: number
 }
 
+export interface ModelInfo {
+  id: string
+  root: string
+  type: string
+  default: boolean
+  loaded: boolean
+}
+
+export interface ModelsResponse {
+  models: ModelInfo[]
+  default_model_id: string
+}
+
 export interface SecondaryRetrievalRequest {
   predicted_fp: number[]
   retrieved_fp: number[]
   k?: number
+  model_id?: string
 }
 
 export interface SecondaryRetrievalResponse {
@@ -101,6 +120,7 @@ export interface SecondaryRetrievalResponse {
 export interface CustomSmilesCardRequest {
   smiles: string
   reference_fp: number[]
+  model_id?: string
 }
 
 export interface CustomSmilesCardResponse {
@@ -113,6 +133,7 @@ export interface AblationRequest {
   bit_threshold?: number
   max_bits?: number
   reference_fp?: number[]
+  model_id?: string
 }
 
 export interface AblationResponse {
@@ -124,10 +145,11 @@ export interface AblationResponse {
 }
 
 // API functions
-async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T> {
+async function fetchJson<T>(endpoint: string, options?: AbortableRequestInit): Promise<T> {
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
+      signal: options?.signal,
       headers: {
         'Content-Type': 'application/json',
         ...options?.headers,
@@ -148,6 +170,10 @@ async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T>
 
     return response.json()
   } catch (error) {
+    // Normalize AbortError into a standard Error so downstream code can ignore it if desired.
+    if (error instanceof DOMException && error.name === 'AbortError') {
+      throw new Error('Request aborted')
+    }
     if (error instanceof Error) {
       throw error
     }
@@ -155,44 +181,87 @@ async function fetchJson<T>(endpoint: string, options?: RequestInit): Promise<T>
   }
 }
 
+type AbortKey =
+  | 'predict'
+  | 'smilesSearch'
+  | 'analyze'
+  | 'secondaryRetrieval'
+  | 'customSmilesCard'
+  | 'ablation'
+
+const abortControllers = new Map<AbortKey, AbortController>()
+
+function abortPreviousAndCreate(key: AbortKey): AbortController {
+  const prev = abortControllers.get(key)
+  if (prev) prev.abort()
+  const next = new AbortController()
+  abortControllers.set(key, next)
+  return next
+}
+
+export function cancelInFlight(key: AbortKey) {
+  const controller = abortControllers.get(key)
+  if (controller) controller.abort()
+}
+
 export const api = {
   health: () => fetchJson<HealthResponse>('/health'),
-  
-  predict: (data: PredictRequest) =>
-    fetchJson<PredictResponse>('/predict', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  
-  smilesSearch: (data: SmilesSearchRequest) =>
-    fetchJson<SmilesSearchResponse>('/smiles-search', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  
-  analyze: (data: AnalysisRequest) =>
-    fetchJson<AnalysisResponse>('/analyze', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
-  
-  secondaryRetrieval: (data: SecondaryRetrievalRequest) =>
-    fetchJson<SecondaryRetrievalResponse>('/secondary-retrieval', {
-      method: 'POST',
-      body: JSON.stringify(data),
-    }),
 
-  customSmilesCard: (data: CustomSmilesCardRequest) =>
-    fetchJson<CustomSmilesCardResponse>('/custom-smiles-card', {
+  models: () => fetchJson<ModelsResponse>('/models'),
+  
+  predict: (data: PredictRequest) => {
+    const controller = abortPreviousAndCreate('predict')
+    return fetchJson<PredictResponse>('/predict', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+      signal: controller.signal,
+    })
+  },
+  
+  smilesSearch: (data: SmilesSearchRequest) => {
+    const controller = abortPreviousAndCreate('smilesSearch')
+    return fetchJson<SmilesSearchResponse>('/smiles-search', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    })
+  },
+  
+  analyze: (data: AnalysisRequest) => {
+    const controller = abortPreviousAndCreate('analyze')
+    return fetchJson<AnalysisResponse>('/analyze', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    })
+  },
+  
+  secondaryRetrieval: (data: SecondaryRetrievalRequest) => {
+    const controller = abortPreviousAndCreate('secondaryRetrieval')
+    return fetchJson<SecondaryRetrievalResponse>('/secondary-retrieval', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    })
+  },
 
-  ablation: (data: AblationRequest) =>
-    fetchJson<AblationResponse>('/ablation', {
+  customSmilesCard: (data: CustomSmilesCardRequest) => {
+    const controller = abortPreviousAndCreate('customSmilesCard')
+    return fetchJson<CustomSmilesCardResponse>('/custom-smiles-card', {
       method: 'POST',
       body: JSON.stringify(data),
-    }),
+      signal: controller.signal,
+    })
+  },
+
+  ablation: (data: AblationRequest) => {
+    const controller = abortPreviousAndCreate('ablation')
+    return fetchJson<AblationResponse>('/ablation', {
+      method: 'POST',
+      body: JSON.stringify(data),
+      signal: controller.signal,
+    })
+  },
 }
 
 // React Query hooks
@@ -201,6 +270,15 @@ export function useHealth(options?: UseQueryOptions<HealthResponse>) {
     queryKey: ['health'],
     queryFn: api.health,
     refetchInterval: 30000, // Check every 30 seconds
+    ...options,
+  })
+}
+
+export function useModels(options?: UseQueryOptions<ModelsResponse>) {
+  return useQuery({
+    queryKey: ['models'],
+    queryFn: api.models,
+    staleTime: 5 * 60 * 1000,
     ...options,
   })
 }

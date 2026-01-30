@@ -11,6 +11,8 @@ from typing import List, Optional
 
 from src.config import DATA_DIR, DEFAULT_MODEL_ID, MODELS_JSON_PATH
 
+SERVICE_MODEL_TYPE = os.getenv("SERVICE_MODEL_TYPE")
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_TYPES = frozenset({"marina", "spectre"})
@@ -89,6 +91,8 @@ def load_models_json(path: Optional[str] = None) -> List[ModelEntry]:
                 mid,
             )
             continue
+        if SERVICE_MODEL_TYPE and typ != SERVICE_MODEL_TYPE:
+            continue
         if not isinstance(default, bool):
             default = False
         if display_name is not None and (not isinstance(display_name, str) or not display_name):
@@ -107,7 +111,36 @@ def load_models_json(path: Optional[str] = None) -> List[ModelEntry]:
             )
         )
 
-    if default_count != 1:
+    if SERVICE_MODEL_TYPE:
+        if not entries:
+            return []
+        if default_count == 0:
+            default_id = DEFAULT_MODEL_ID if any(e.id == DEFAULT_MODEL_ID for e in entries) else entries[0].id
+            entries = [
+                ModelEntry(
+                    id=e.id,
+                    root=e.root,
+                    root_rel=e.root_rel,
+                    type=e.type,
+                    default=(e.id == default_id),
+                    display_name=e.display_name,
+                )
+                for e in entries
+            ]
+        elif default_count > 1:
+            default_id = DEFAULT_MODEL_ID if any(e.id == DEFAULT_MODEL_ID for e in entries) else entries[0].id
+            entries = [
+                ModelEntry(
+                    id=e.id,
+                    root=e.root,
+                    root_rel=e.root_rel,
+                    type=e.type,
+                    default=(e.id == default_id),
+                    display_name=e.display_name,
+                )
+                for e in entries
+            ]
+    elif default_count != 1:
         logger.warning(
             "models.json: exactly one model must have default=true (got %d)",
             default_count,
@@ -161,6 +194,12 @@ def resolve_and_validate_model_id(
 
     if not entries:
         return (default_id, None)
+
+    if SERVICE_MODEL_TYPE and mid != default_id:
+        return (
+            mid,
+            (400, f"This backend serves only '{default_id}'."),
+        )
 
     info = get_model_info(mid)
     if info is None:

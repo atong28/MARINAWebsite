@@ -17,7 +17,6 @@ from src.services.model_manifest import resolve_and_validate_model_id
 from src.services.model_service import ModelService
 from src.services.molecule_renderer import MoleculeRenderer
 from src.services.result_builder import build_result_card
-from src.domain.drawing.draw import compute_bit_environments_batch
 from src.domain.fingerprint.fp_loader import EntropyFPLoader
 from src.domain.fingerprint.fp_utils import tanimoto_similarity
 from src.api.app import run_heavy
@@ -96,10 +95,8 @@ async def analyze(request: Request, data: AnalysisRequest):
             bit_environments = await run_heavy(
                 request,
                 pool.run(
-                    compute_bit_environments_batch,
-                    target_smiles,
-                    retrieved_molecule_fp_indices,
-                    fp_loader,
+                    "bit_envs",
+                    {"smiles": target_smiles, "fp_indices": retrieved_molecule_fp_indices},
                     timeout=ANALYZE_TIMEOUT_S,
                 ),
             )
@@ -286,10 +283,8 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
             bit_envs = await run_heavy(
                 request,
                 pool.run(
-                    compute_bit_environments_batch,
-                    smiles,
-                    retrieved_indices,
-                    fp_loader,
+                    "bit_envs",
+                    {"smiles": smiles, "fp_indices": retrieved_indices},
                     timeout=CUSTOM_SMILES_TIMEOUT_S,
                 ),
             )

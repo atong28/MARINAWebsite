@@ -9,14 +9,8 @@ from fastapi import APIRouter, HTTPException, status, Request
 from src.api.app import run_heavy
 from src.api.middleware.rate_limit import get_limiter
 from src.config import ABLATION_TIMEOUT_S, MOLECULE_IMG_SIZE
-from src.domain.drawing.draw import (
-    compute_bit_environments_batch,
-    draw_similarity_comparison,
-    render_molecule_with_change_overlays,
-    pil_image_to_base64,
-)
+from src.domain.drawing.draw import pil_image_to_base64
 from src.domain.models.analysis_result import AblationRequest, AblationResponse
-from src.domain.predictor import predict_from_raw
 from src.services.model_manifest import resolve_and_validate_model_id
 from src.services.model_service import ModelService
 from src.services.compute_pool import ComputeOverloadedError, ComputeTimeoutError
@@ -69,10 +63,8 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
         prediction_output = await run_heavy(
             request,
             pool.run(
-                predict_from_raw,
-                raw_data,
-                k=1,
-                model_id=mid,
+                "predict",
+                {"raw_inputs": raw_data, "k": 1, "model_id": mid},
                 timeout=ABLATION_TIMEOUT_S,
             ),
         )
@@ -112,26 +104,15 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
     else:
         pred_fp_list = list(pred_fp)
 
-    fp_loader = model_service.get_fp_loader(mid)
-    if fp_loader is None:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Fingerprint loader is not available.",
-        )
-
     # Compute similarity map for the provided molecule
     similarity_map_encoded = None
     try:
-        fp_tensor = torch.tensor(pred_fp_list, dtype=torch.float32)
         pool = request.app.state.compute_pool
         similarity_img = await run_heavy(
             request,
             pool.run(
-                draw_similarity_comparison,
-                fp_tensor,
-                data.smiles,
-                fp_loader,
-                img_size=MOLECULE_IMG_SIZE,
+                "similarity_map",
+                {"predicted_fp": pred_fp_list, "smiles": data.smiles, "img_size": MOLECULE_IMG_SIZE},
                 timeout=ABLATION_TIMEOUT_S,
             ),
         )
@@ -153,10 +134,8 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
             bit_environments = await run_heavy(
                 request,
                 pool.run(
-                    compute_bit_environments_batch,
-                    data.smiles,
-                    active_bit_indices,
-                    fp_loader,
+                    "bit_envs",
+                    {"smiles": data.smiles, "fp_indices": active_bit_indices},
                     timeout=ABLATION_TIMEOUT_S,
                 ),
             )
@@ -170,13 +149,14 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
             change_overlay_svg = await run_heavy(
                 request,
                 pool.run(
-                    render_molecule_with_change_overlays,
-                    data.smiles,
-                    data.reference_fp,
-                    pred_fp_list,
-                    fp_loader,
-                    threshold=data.bit_threshold,
-                    img_size=MOLECULE_IMG_SIZE,
+                    "change_overlay",
+                    {
+                        "smiles": data.smiles,
+                        "original_fp": data.reference_fp,
+                        "new_fp": pred_fp_list,
+                        "threshold": data.bit_threshold,
+                        "img_size": MOLECULE_IMG_SIZE,
+                    },
                     timeout=ABLATION_TIMEOUT_S,
                 ),
             )

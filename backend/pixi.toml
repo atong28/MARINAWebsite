@@ -8,6 +8,8 @@ version = "2.0.0"
 [tasks]
 start = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 5000" }
 dev = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 8003 --reload", env = { KMP_DUPLICATE_LIB_OK = "TRUE", LD_LIBRARY_PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/lib:$LD_LIBRARY_PATH" } }
+dev-marina = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 8003 --reload", env = { SERVICE_MODEL_TYPE = "marina", DEFAULT_MODEL_ID = "marina_best", MODEL_ROOT = "$PIXI_PROJECT_ROOT/data/marina_best", DATA_DIR = "$PIXI_PROJECT_ROOT/data", MODELS_JSON_PATH = "$PIXI_PROJECT_ROOT/data/models.json", MAX_COMPUTE_WORKERS = "1", MAX_COMPUTE_QUEUE = "4", KMP_DUPLICATE_LIB_OK = "TRUE", LD_LIBRARY_PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/lib:$LD_LIBRARY_PATH" } }
+dev-spectre = { cmd = "uvicorn src.api.app:app --host 0.0.0.0 --port 8004 --reload", env = { SERVICE_MODEL_TYPE = "spectre", DEFAULT_MODEL_ID = "spectre_best", MODEL_ROOT = "$PIXI_PROJECT_ROOT/data/spectre_best", DATA_DIR = "$PIXI_PROJECT_ROOT/data", MODELS_JSON_PATH = "$PIXI_PROJECT_ROOT/data/models.json", MAX_COMPUTE_WORKERS = "1", MAX_COMPUTE_QUEUE = "4", KMP_DUPLICATE_LIB_OK = "TRUE", LD_LIBRARY_PATH = "$PIXI_PROJECT_ROOT/.pixi/envs/default/lib:$LD_LIBRARY_PATH" } }
 test = "pytest"
 
 [dependencies]

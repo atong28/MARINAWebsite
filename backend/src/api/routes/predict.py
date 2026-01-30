@@ -9,7 +9,6 @@ from fastapi import APIRouter, HTTPException, Request, status
 from src.api.app import run_heavy
 from src.api.middleware.rate_limit import get_limiter
 from src.config import MAX_TOP_K, MOLECULE_IMG_SIZE, PREDICT_TIMEOUT_S
-from src.domain.predictor import predict_from_raw
 from src.domain.models.prediction_result import PredictResponse
 from src.domain.models.spectral_data import PredictRequest
 from src.services.model_manifest import resolve_and_validate_model_id
@@ -68,10 +67,8 @@ async def predict(request: Request, data: PredictRequest):
         out = await run_heavy(
             request,
             pool.run(
-                predict_from_raw,
-                raw_data,
-                k=MAX_TOP_K,
-                model_id=mid,
+                "predict",
+                {"raw_inputs": raw_data, "k": MAX_TOP_K, "model_id": mid},
                 timeout=PREDICT_TIMEOUT_S,
             ),
         )
@@ -83,7 +80,7 @@ async def predict(request: Request, data: PredictRequest):
             )
         pred_prob = out[2] if len(out) > 2 else None
         if pred_prob is None:
-            logger.error("predict_from_raw did not return pred_prob as third element")
+            logger.error("Predictor did not return pred_prob as third element")
             raise HTTPException(
                 status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
                 detail="Predictor did not return a fingerprint vector",

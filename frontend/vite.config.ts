@@ -14,9 +14,14 @@ export default defineConfig(({ mode }) => {
   // These should be set in root .env file (single source of truth)
   const frontendPort = parseInt(env.FRONTEND_PORT || '3000', 10)
   const backendPort = parseInt(env.BACKEND_PORT || '5000', 10)
-  // In production, use relative path '/api' for nginx reverse proxy
-  // In development, can use full URL or relative path
-  const apiBase = env.VITE_API_BASE || (mode === 'production' ? '/api' : `http://localhost:${backendPort}/api`)
+  // In production, use relative path '/api' for nginx reverse proxy.
+  // In development, can use full URL or relative path.
+  const apiBase =
+    env.VITE_API_BASE || (mode === 'production' ? '/api' : `http://localhost:${backendPort}/api`)
+
+  // Optional per-model bases; fall back to apiBase if not provided.
+  const apiBaseMarina = env.VITE_API_BASE_MARINA || apiBase
+  const apiBaseSpectre = env.VITE_API_BASE_SPECTRE || apiBase
   
   return {
   plugins: [react()],
@@ -30,10 +35,13 @@ export default defineConfig(({ mode }) => {
       }
     }
   },
-    // Inject VITE_API_BASE into client code so it's available via import.meta.env.VITE_API_BASE
-    // In production, this will be '/api' for nginx reverse proxy
+    // Inject API base URLs into client code so they're available via import.meta.env.*
+    // In production, these will typically be relative paths (e.g. '/api', '/api/marina', '/api/spectre')
+    // and nginx will route to the appropriate backend.
     define: {
-      'import.meta.env.VITE_API_BASE': JSON.stringify(apiBase)
+      'import.meta.env.VITE_API_BASE': JSON.stringify(apiBase),
+      'import.meta.env.VITE_API_BASE_MARINA': JSON.stringify(apiBaseMarina),
+      'import.meta.env.VITE_API_BASE_SPECTRE': JSON.stringify(apiBaseSpectre),
     },
   build: {
     outDir: 'dist',

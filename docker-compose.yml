@@ -1,7 +1,7 @@
 version: '3.8'
 
 services:
-  backend:
+  backend_marina:
     build:
       context: ./backend
       dockerfile: Dockerfile
@@ -23,8 +23,57 @@ services:
       # Data: models.json drives model list when present
       - DATA_DIR=/app/data
       - MODELS_JSON_PATH=/app/data/models.json
-      - MODEL_ROOT=/app/data/marina_best
-      - DEFAULT_MODEL_ID=marina_best
+      - MODEL_ROOT=${MARINA_MODEL_ROOT:-/app/data/marina_best}
+      - DEFAULT_MODEL_ID=${MARINA_DEFAULT_MODEL_ID:-marina_best}
+      - SERVICE_MODEL_TYPE=marina
+      # Debugging
+      - PYTHONUNBUFFERED=1
+      - HIGHLIGHT_DEBUG=${HIGHLIGHT_DEBUG:-false}
+      - RDKIT_ENABLED=${RDKIT_ENABLED:-true}
+      # Model configuration
+      - MOLECULE_IMG_SIZE=${MOLECULE_IMG_SIZE:-400}
+      - DEFAULT_TOP_K=${DEFAULT_TOP_K:-10}
+      - MAX_TOP_K=${MAX_TOP_K:-50}
+      # Lazy loading: preload only default model; optional cap and concurrency
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-default}
+      - MAX_LOADED_MODELS=${MAX_LOADED_MODELS:-0}
+      - MAX_CONCURRENT_HEAVY_OPS=${MAX_CONCURRENT_HEAVY_OPS:-0}
+    networks:
+      - marina-net
+    restart: unless-stopped
+    healthcheck:
+      # Liveness probe: minimal endpoint so container stays healthy when busy or during model load
+      test: ["CMD", "pixi", "run", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health/live')"]
+      interval: 60s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+  backend_spectre:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: spectre-backend
+    volumes:
+      # Mount source code for hot reload (development) - use :rw for write access if needed
+      - ./backend/src:/app/src:rw
+      # Mount data directory (read-only)
+      - ./backend/data:/app/data:ro
+      # Mount logs directory
+      - ./logs:/app/logs:rw
+    # No port mapping - only accessible internally via nginx
+    environment:
+      # Server configuration
+      - PORT=5000
+      - HOST=${BACKEND_HOST:-0.0.0.0}
+      # Pixi path
+      - PATH=/root/.pixi/bin:$PATH
+      # Data: models.json drives model list when present
+      - DATA_DIR=/app/data
+      - MODELS_JSON_PATH=/app/data/models.json
+      - MODEL_ROOT=${SPECTRE_MODEL_ROOT:-/app/data/spectre_best}
+      - DEFAULT_MODEL_ID=${SPECTRE_DEFAULT_MODEL_ID:-spectre_best}
+      - SERVICE_MODEL_TYPE=spectre
       # Debugging
       - PYTHONUNBUFFERED=1
       - HIGHLIGHT_DEBUG=${HIGHLIGHT_DEBUG:-false}
@@ -54,6 +103,8 @@ services:
       dockerfile: Dockerfile
       args:
         VITE_API_BASE: /api
+        VITE_API_BASE_MARINA: /api/marina
+        VITE_API_BASE_SPECTRE: /api/spectre
     container_name: marina-frontend
     volumes:
       # Export dist directory for nginx to use
@@ -74,7 +125,9 @@ services:
       # Mount frontend static files from frontend container volume
       - frontend_dist:/usr/share/nginx/html:ro
     depends_on:
-      backend:
+      backend_marina:
+        condition: service_healthy
+      backend_spectre:
         condition: service_healthy
       frontend:
         condition: service_started

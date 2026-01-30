@@ -3,28 +3,32 @@
  */
 import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tanstack/react-query'
 
-// Get API base URL from environment variable
-// In production, use relative path '/api' so it works with nginx reverse proxy
-// For development, VITE_API_BASE can be set to full URL (e.g., http://localhost:5000/api)
+// Get API base URLs from environment variables
+// In production, use relative paths so it works with nginx reverse proxy
+// For development, these can be full URLs (e.g., http://localhost:5000/api/marina)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
+const API_BASE_MARINA = import.meta.env.VITE_API_BASE_MARINA || `${API_BASE}`
+const API_BASE_SPECTRE = import.meta.env.VITE_API_BASE_SPECTRE || `${API_BASE}`
 
 type AbortableRequestInit = RequestInit & {
   signal?: AbortSignal
-  requestIdKey?: string
-  requestId?: string
 }
 
-const lastRequestIds = new Map<string, string>()
+const modelTypeById = new Map<string, string>()
 
-function createRequestId(): string {
-  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
-    return crypto.randomUUID()
-  }
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+function setModelTypeCache(models: ModelInfo[]) {
+  modelTypeById.clear()
+  models.forEach((m) => {
+    if (m.type) {
+      modelTypeById.set(m.id, m.type)
+    }
+  })
 }
 
-export function getLastRequestId(key: string): string | undefined {
-  return lastRequestIds.get(key)
+function resolveApiBase(modelId?: string) {
+  const modelType = modelId ? modelTypeById.get(modelId) : null
+  if (modelType === 'spectre') return API_BASE_SPECTRE
+  return API_BASE_MARINA
 }
 
 // Types (will be generated from OpenAPI schema in production)
@@ -163,18 +167,18 @@ export interface AblationResponse {
 }
 
 // API functions
-async function fetchJson<T>(endpoint: string, options?: AbortableRequestInit): Promise<T> {
+async function fetchJson<T>(
+  endpoint: string,
+  options?: AbortableRequestInit,
+  baseOverride?: string
+): Promise<T> {
   try {
-    const requestId = options?.requestId ?? createRequestId()
-    if (options?.requestIdKey) {
-      lastRequestIds.set(options.requestIdKey, requestId)
-    }
-    const response = await fetch(`${API_BASE}${endpoint}`, {
+    const base = baseOverride ?? API_BASE
+    const response = await fetch(`${base}${endpoint}`, {
       ...options,
       signal: options?.signal,
       headers: {
         'Content-Type': 'application/json',
-        'X-Request-ID': requestId,
         ...options?.headers,
       },
     })
@@ -228,9 +232,33 @@ export function cancelInFlight(key: AbortKey) {
 }
 
 export const api = {
-  health: () => fetchJson<HealthResponse>('/health', { requestIdKey: 'health' }),
+  health: (modelId?: string) => fetchJson<HealthResponse>('/health', undefined, resolveApiBase(modelId)),
 
-  models: () => fetchJson<ModelsResponse>('/models', { requestIdKey: 'models' }),
+  models: async () => {
+    const [marinaRes, spectreRes] = await Promise.allSettled([
+      fetchJson<ModelsResponse>('/models', undefined, API_BASE_MARINA),
+      fetchJson<ModelsResponse>('/models', undefined, API_BASE_SPECTRE),
+    ])
+
+    const models: ModelInfo[] = []
+    let defaultModelId = ''
+
+    if (marinaRes.status === 'fulfilled') {
+      models.push(...marinaRes.value.models)
+      defaultModelId = marinaRes.value.default_model_id || defaultModelId
+    }
+    if (spectreRes.status === 'fulfilled') {
+      models.push(...spectreRes.value.models)
+      if (!defaultModelId) defaultModelId = spectreRes.value.default_model_id
+    }
+
+    setModelTypeCache(models)
+    if (!defaultModelId && models.length > 0) {
+      defaultModelId = models[0]?.id ?? ''
+    }
+
+    return { models, default_model_id: defaultModelId }
+  },
   
   predict: (data: PredictRequest) => {
     const controller = abortPreviousAndCreate('predict')
@@ -238,8 +266,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
-      requestIdKey: 'predict',
-    })
+    }, resolveApiBase(data.model_id))
   },
   
   smilesSearch: (data: SmilesSearchRequest) => {
@@ -248,8 +275,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
-      requestIdKey: 'smilesSearch',
-    })
+    }, resolveApiBase(data.model_id))
   },
   
   analyze: (data: AnalysisRequest) => {
@@ -258,8 +284,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
-      requestIdKey: 'analyze',
-    })
+    }, resolveApiBase(data.model_id))
   },
   
   secondaryRetrieval: (data: SecondaryRetrievalRequest) => {
@@ -268,8 +293,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
-      requestIdKey: 'secondaryRetrieval',
-    })
+    }, resolveApiBase(data.model_id))
   },
 
   customSmilesCard: (data: CustomSmilesCardRequest) => {
@@ -278,8 +302,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
-      requestIdKey: 'customSmilesCard',
-    })
+    }, resolveApiBase(data.model_id))
   },
 
   ablation: (data: AblationRequest) => {
@@ -288,16 +311,15 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
-      requestIdKey: 'ablation',
-    })
+    }, resolveApiBase(data.model_id))
   },
 }
 
 // React Query hooks
-export function useHealth(options?: UseQueryOptions<HealthResponse>) {
+export function useHealth(modelId?: string, options?: UseQueryOptions<HealthResponse>) {
   return useQuery({
-    queryKey: ['health'],
-    queryFn: api.health,
+    queryKey: ['health', modelId ?? 'default'],
+    queryFn: () => api.health(modelId),
     refetchInterval: 5000, // Check every 2 seconds for responsive loading state
     refetchOnMount: true, // Always refetch on component mount (page load/refresh)
     refetchOnWindowFocus: true, // Refetch when window regains focus (overrides global setting)

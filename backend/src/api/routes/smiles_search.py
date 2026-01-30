@@ -8,7 +8,6 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from src.api.middleware.rate_limit import get_limiter
 from src.config import MAX_TOP_K, MOLECULE_IMG_SIZE
-from src.domain.ranker import RankingSet, filter_rankingset_rows
 from src.domain.models.prediction_result import SmilesSearchResponse
 from src.domain.models.spectral_data import SmilesSearchRequest
 from src.services.model_manifest import resolve_and_validate_model_id
@@ -70,13 +69,6 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
 
         query_tensor = torch.tensor(fp, dtype=torch.float32)
         session = model_service.get_session(mid)
-        rankingset_full = model_service.get_rankingset(mid)
-        if rankingset_full is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Rankingset not available",
-            )
-
         kept_indices = kept_indices_for_mw_range(session, mw_min, mw_max)
         if not kept_indices:
             return SmilesSearchResponse(
@@ -88,8 +80,7 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
                 query_fp=query_tensor.tolist(),
             )
 
-        filtered_store = filter_rankingset_rows(rankingset_full, kept_indices)
-        ranker = RankingSet(store=filtered_store, metric="cosine")
+        ranker = session.get_filtered_rankingset(mw_min, mw_max)
         n = min(requested_k, len(kept_indices))
         sims, local_idxs = ranker.retrieve_with_scores(query_tensor.unsqueeze(0), n=n)
         sims = sims.squeeze()
@@ -105,6 +96,8 @@ async def smiles_search(request: Request, data: SmilesSearchRequest):
             for i in range(len(sim_list))
         ]
         molecule_renderer = MoleculeRenderer.instance()
+        # Use the full rankingset tensor for build_result_cards
+        rankingset_full = session.get_rankingset().data
         results = build_result_cards(
             session,
             rankingset_full,

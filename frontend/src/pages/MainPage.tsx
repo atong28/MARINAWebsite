@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { usePredict, useSmilesSearch, useHealth, api, cancelInFlight } from '../services/api'
+import { usePredict, useSmilesSearch, useHealth, api, cancelInFlight, getLastRequestId } from '../services/api'
 import { useMainPageStore } from '../store/store'
 import { getAvailableExamples, loadExample, type ExampleMetadata } from '../services/exampleLoader'
 import { ROUTES } from '../routes'
@@ -11,6 +11,7 @@ import ResultsGrid from '../components/results/ResultsGrid'
 import CustomResultsGrid from '../components/results/CustomResultsGrid'
 import StatusIndicator from '../components/common/StatusIndicator'
 import ModelSelector from '../components/common/ModelSelector'
+import RequestLogs from '../components/common/RequestLogs'
 import './MainPage.css'
 
 const API_DOCS_URL = '/docs'
@@ -50,6 +51,8 @@ function MainPage() {
   const [customSmiles, setCustomSmiles] = useState('')
   const [customResultError, setCustomResultError] = useState<string | null>(null)
   const [isCustomLoading, setIsCustomLoading] = useState(false)
+  const [logRequestId, setLogRequestId] = useState<string | null>(null)
+  const [logTitle, setLogTitle] = useState<string>('')
 
   // Monotonic request sequencing to ensure only latest request updates UI state.
   const requestSeqRef = useRef(0)
@@ -137,7 +140,12 @@ function MainPage() {
     if (retrievalMwMax !== null && retrievalMwMax !== undefined && !Number.isNaN(retrievalMwMax) && isFinite(retrievalMwMax)) {
       payload.mw_max = retrievalMwMax
     }
-    predictMutation.mutate(payload)
+    predictMutation.mutate(payload, {
+      onSettled: () => {
+        setLogRequestId(getLastRequestId('predict') ?? null)
+        setLogTitle('Predict Logs')
+      },
+    })
   }, [
     c_nmr,
     h_nmr,
@@ -169,7 +177,12 @@ function MainPage() {
     if (retrievalMwMax !== null && retrievalMwMax !== undefined && !Number.isNaN(retrievalMwMax) && isFinite(retrievalMwMax)) {
       payload.mw_max = retrievalMwMax
     }
-    smilesSearchMutation.mutate(payload)
+    smilesSearchMutation.mutate(payload, {
+      onSettled: () => {
+        setLogRequestId(getLastRequestId('smilesSearch') ?? null)
+        setLogTitle('SMILES Search Logs')
+      },
+    })
   }, [
     smilesInput,
     k,
@@ -392,6 +405,7 @@ function MainPage() {
           Error: {predictMutation.error?.message || smilesSearchMutation.error?.message}
         </div>
       )}
+      <RequestLogs requestId={logRequestId} title={logTitle} />
     </div>
   )
 }

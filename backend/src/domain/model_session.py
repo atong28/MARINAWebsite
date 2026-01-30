@@ -4,7 +4,7 @@ import logging
 import os
 import threading
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 import torch
 
@@ -57,10 +57,12 @@ class ModelSession:
     _metadata_path: str
 
     _rankingset_store: Optional[torch.Tensor] = None
+    _rankingset_wrapper: Optional[RankingSet] = None
+    _filtered_rankingsets: Dict[Tuple[Optional[float], Optional[float]], RankingSet] = field(default_factory=dict, repr=False)
     _mw_sorted: Optional[List[tuple]] = None  # (mw, idx) sorted by mw
     _mw_by_idx: Optional[Dict[int, float]] = None
     _num_rows: Optional[int] = None
-    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+    _lock: threading.RLock = field(default_factory=threading.RLock, repr=False)
 
     @classmethod
     def from_model_root(cls, model_root: str, model_type: Optional[str] = None) -> "ModelSession":
@@ -161,9 +163,45 @@ class ModelSession:
 
     def get_rankingset(self) -> RankingSet:
         """Lazily load the retrieval rankingset and MW index, then wrap in RankingSet."""
-        self._ensure_mw_index()
-        assert self._rankingset_store is not None
-        return RankingSet(store=self._rankingset_store, metric="cosine")
+        if self._rankingset_store is None:
+            self._ensure_mw_index()
+        if self._rankingset_wrapper is None:
+            assert self._rankingset_store is not None
+            self._rankingset_wrapper = RankingSet(store=self._rankingset_store, metric="cosine")
+        return self._rankingset_wrapper
+
+    def get_filtered_rankingset(
+        self,
+        mw_min: Optional[float],
+        mw_max: Optional[float],
+    ) -> RankingSet:
+        """
+        Get a cached RankingSet filtered by MW range.
+        Creates and caches filtered RankingSet instances per MW range to avoid
+        repeated instantiation on every API call.
+        """
+        cache_key = (mw_min, mw_max)
+        
+        with self._lock:
+            if cache_key in self._filtered_rankingsets:
+                return self._filtered_rankingsets[cache_key]
+            
+            # Get base rankingset store
+            base_ranker = self.get_rankingset()
+            base_store = base_ranker.data
+            
+            # Compute kept indices for MW range
+            kept_indices = self.indices_in_mw_range(mw_min, mw_max)
+            
+            # Filter the store
+            from src.domain.ranker import filter_rankingset_rows
+            filtered_store = filter_rankingset_rows(base_store, kept_indices)
+            
+            # Create and cache filtered RankingSet
+            filtered_ranker = RankingSet(store=filtered_store, metric="cosine")
+            self._filtered_rankingsets[cache_key] = filtered_ranker
+            
+            return filtered_ranker
 
     def get_metadata(self) -> Dict[str, Any]:
         return self._metadata
@@ -212,10 +250,12 @@ class ModelSession:
         self._ensure_mw_index()
         assert self._num_rows is not None
         if mw_min is None and mw_max is None:
-            return list(range(self._num_rows))
+            out = list(range(self._num_rows))
+            return out
         assert self._mw_sorted is not None and self._mw_by_idx is not None
         if not self._mw_sorted:
-            return list(range(self._num_rows))
+            out = list(range(self._num_rows))
+            return out
         mw_vals = [t[0] for t in self._mw_sorted]
         lo = bisect.bisect_left(mw_vals, mw_min) if mw_min is not None else 0
         hi = (

@@ -8,7 +8,24 @@ import { useQuery, useMutation, UseQueryOptions, UseMutationOptions } from '@tan
 // For development, VITE_API_BASE can be set to full URL (e.g., http://localhost:5000/api)
 const API_BASE = import.meta.env.VITE_API_BASE || '/api'
 
-type AbortableRequestInit = RequestInit & { signal?: AbortSignal }
+type AbortableRequestInit = RequestInit & {
+  signal?: AbortSignal
+  requestIdKey?: string
+  requestId?: string
+}
+
+const lastRequestIds = new Map<string, string>()
+
+function createRequestId(): string {
+  if (typeof crypto !== 'undefined' && 'randomUUID' in crypto) {
+    return crypto.randomUUID()
+  }
+  return `${Date.now()}-${Math.random().toString(16).slice(2)}`
+}
+
+export function getLastRequestId(key: string): string | undefined {
+  return lastRequestIds.get(key)
+}
 
 // Types (will be generated from OpenAPI schema in production)
 export interface SpectralDataInput {
@@ -148,11 +165,16 @@ export interface AblationResponse {
 // API functions
 async function fetchJson<T>(endpoint: string, options?: AbortableRequestInit): Promise<T> {
   try {
+    const requestId = options?.requestId ?? createRequestId()
+    if (options?.requestIdKey) {
+      lastRequestIds.set(options.requestIdKey, requestId)
+    }
     const response = await fetch(`${API_BASE}${endpoint}`, {
       ...options,
       signal: options?.signal,
       headers: {
         'Content-Type': 'application/json',
+        'X-Request-ID': requestId,
         ...options?.headers,
       },
     })
@@ -206,9 +228,9 @@ export function cancelInFlight(key: AbortKey) {
 }
 
 export const api = {
-  health: () => fetchJson<HealthResponse>('/health'),
+  health: () => fetchJson<HealthResponse>('/health', { requestIdKey: 'health' }),
 
-  models: () => fetchJson<ModelsResponse>('/models'),
+  models: () => fetchJson<ModelsResponse>('/models', { requestIdKey: 'models' }),
   
   predict: (data: PredictRequest) => {
     const controller = abortPreviousAndCreate('predict')
@@ -216,6 +238,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
+      requestIdKey: 'predict',
     })
   },
   
@@ -225,6 +248,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
+      requestIdKey: 'smilesSearch',
     })
   },
   
@@ -234,6 +258,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
+      requestIdKey: 'analyze',
     })
   },
   
@@ -243,6 +268,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
+      requestIdKey: 'secondaryRetrieval',
     })
   },
 
@@ -252,6 +278,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
+      requestIdKey: 'customSmilesCard',
     })
   },
 
@@ -261,6 +288,7 @@ export const api = {
       method: 'POST',
       body: JSON.stringify(data),
       signal: controller.signal,
+      requestIdKey: 'ablation',
     })
   },
 }
@@ -270,7 +298,11 @@ export function useHealth(options?: UseQueryOptions<HealthResponse>) {
   return useQuery({
     queryKey: ['health'],
     queryFn: api.health,
-    refetchInterval: 60000, // Check every 60 seconds
+    refetchInterval: 5000, // Check every 2 seconds for responsive loading state
+    refetchOnMount: true, // Always refetch on component mount (page load/refresh)
+    refetchOnWindowFocus: true, // Refetch when window regains focus (overrides global setting)
+    retry: 1, // Retry once on failure
+    retryDelay: 1000,
     ...options,
   })
 }

@@ -33,6 +33,16 @@ MAX_LOADED_MODELS = int(os.getenv("MAX_LOADED_MODELS", "0"))
 # Max concurrent heavy ops (predict/analyze/ablation etc); 0 = no limit.
 MAX_CONCURRENT_HEAVY_OPS = int(os.getenv("MAX_CONCURRENT_HEAVY_OPS", "0"))
 
+# Compute worker pool limits
+MAX_COMPUTE_WORKERS = int(os.getenv("MAX_COMPUTE_WORKERS", "4"))
+MAX_COMPUTE_QUEUE = int(os.getenv("MAX_COMPUTE_QUEUE", "8"))
+
+# Per-endpoint timeouts (seconds)
+PREDICT_TIMEOUT_S = float(os.getenv("PREDICT_TIMEOUT_S", "60"))
+ANALYZE_TIMEOUT_S = float(os.getenv("ANALYZE_TIMEOUT_S", "60"))
+ABLATION_TIMEOUT_S = float(os.getenv("ABLATION_TIMEOUT_S", "120"))
+CUSTOM_SMILES_TIMEOUT_S = float(os.getenv("CUSTOM_SMILES_TIMEOUT_S", "45"))
+
 # Model / fingerprint artifacts (derived from MODEL_ROOT)
 CKPT_PATH = os.getenv("CKPT_PATH", os.path.join(MODEL_ROOT, "best.ckpt"))
 PARAMS_PATH = os.getenv("PARAMS_PATH", os.path.join(MODEL_ROOT, "params.json"))

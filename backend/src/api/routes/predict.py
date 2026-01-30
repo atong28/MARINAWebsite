@@ -1,7 +1,6 @@
 """
 Prediction endpoint for spectral data.
 """
-import asyncio
 import logging
 
 import torch
@@ -9,14 +8,14 @@ from fastapi import APIRouter, HTTPException, Request, status
 
 from src.api.app import run_heavy
 from src.api.middleware.rate_limit import get_limiter
-from src.config import MAX_TOP_K, MOLECULE_IMG_SIZE
+from src.config import MAX_TOP_K, MOLECULE_IMG_SIZE, PREDICT_TIMEOUT_S
 from src.domain.predictor import predict_from_raw
-from src.domain.ranker import RankingSet, filter_rankingset_rows
 from src.domain.models.prediction_result import PredictResponse
 from src.domain.models.spectral_data import PredictRequest
 from src.services.model_manifest import resolve_and_validate_model_id
 from src.services.model_service import ModelService
 from src.services.molecule_renderer import MoleculeRenderer
+from src.services.compute_pool import ComputeOverloadedError, ComputeTimeoutError
 from src.services.retrieval_helpers import (
     build_result_cards,
     kept_indices_for_mw_range,
@@ -65,10 +64,15 @@ async def predict(request: Request, data: PredictRequest):
         if data.raw.mw:
             raw_data["mw"] = data.raw.mw
 
+        pool = request.app.state.compute_pool
         out = await run_heavy(
             request,
-            asyncio.to_thread(
-                predict_from_raw, raw_data, k=MAX_TOP_K, model_id=mid
+            pool.run(
+                predict_from_raw,
+                raw_data,
+                k=MAX_TOP_K,
+                model_id=mid,
+                timeout=PREDICT_TIMEOUT_S,
             ),
         )
         if not isinstance(out, tuple) or len(out) < 2:
@@ -86,13 +90,6 @@ async def predict(request: Request, data: PredictRequest):
             )
 
         session = model_service.get_session(mid)
-        rankingset_full = model_service.get_rankingset(mid)
-        if rankingset_full is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Rankingset not available",
-            )
-
         kept_indices = kept_indices_for_mw_range(session, mw_min, mw_max)
         if not kept_indices:
             return PredictResponse(
@@ -103,8 +100,7 @@ async def predict(request: Request, data: PredictRequest):
                 pred_fp=pred_prob,
             )
 
-        filtered_store = filter_rankingset_rows(rankingset_full, kept_indices)
-        ranker = RankingSet(store=filtered_store, metric="cosine")
+        ranker = session.get_filtered_rankingset(mw_min, mw_max)
         pred_tensor = torch.tensor(pred_prob, dtype=torch.float32)
         n = min(requested_k, len(kept_indices))
         sims, local_idxs = ranker.retrieve_with_scores(pred_tensor.unsqueeze(0), n=n)
@@ -122,6 +118,8 @@ async def predict(request: Request, data: PredictRequest):
         ]
         fp_loader = model_service.get_fp_loader(mid)
         molecule_renderer = MoleculeRenderer.instance()
+        # Use the full rankingset tensor for build_result_cards
+        rankingset_full = session.get_rankingset().data
         results = build_result_cards(
             session,
             rankingset_full,
@@ -143,6 +141,16 @@ async def predict(request: Request, data: PredictRequest):
         )
     except HTTPException:
         raise
+    except ComputeOverloadedError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server is busy. Please retry shortly.",
+        )
+    except ComputeTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Prediction timed out.",
+        )
     except Exception as e:
         logger.error("Prediction error: %s", e, exc_info=True)
         raise HTTPException(

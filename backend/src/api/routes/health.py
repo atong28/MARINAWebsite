@@ -1,10 +1,10 @@
 """
 Health check endpoint.
 """
+import asyncio
 import time
 
 from fastapi import APIRouter, status
-from fastapi.responses import JSONResponse
 from src.services.model_service import ModelService
 
 router = APIRouter()
@@ -33,7 +33,7 @@ async def health():
     }
     
     model_service = ModelService.instance()
-    is_ready = model_service.is_ready()
+    is_ready = await asyncio.to_thread(model_service.is_ready)
     
     if is_ready:
         return {
@@ -43,13 +43,10 @@ async def health():
             'message': 'Model is ready for predictions'
         }
     else:
-        return JSONResponse(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            content={
-                **base_response,
-                'status': 'initializing',
-                'model_loaded': False,
-                'message': 'Model initialization in progress'
-            }
-        )
+        return {
+            **base_response,
+            'status': 'initializing',
+            'model_loaded': False,
+            'message': 'Model initialization in progress'
+        }
 

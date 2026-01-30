@@ -1,7 +1,6 @@
 """
 Analysis and custom-card endpoints for detailed molecular fingerprint analysis.
 """
-import asyncio
 import logging
 from typing import List
 
@@ -22,8 +21,9 @@ from src.domain.drawing.draw import compute_bit_environments_batch
 from src.domain.fingerprint.fp_loader import EntropyFPLoader
 from src.domain.fingerprint.fp_utils import tanimoto_similarity
 from src.api.app import run_heavy
-from src.config import MOLECULE_IMG_SIZE
+from src.config import ANALYZE_TIMEOUT_S, CUSTOM_SMILES_TIMEOUT_S, MOLECULE_IMG_SIZE
 from src.api.middleware.rate_limit import get_limiter
+from src.services.compute_pool import ComputeOverloadedError, ComputeTimeoutError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -92,13 +92,15 @@ async def analyze(request: Request, data: AnalysisRequest):
             )
         
         try:
+            pool = request.app.state.compute_pool
             bit_environments = await run_heavy(
                 request,
-                asyncio.to_thread(
+                pool.run(
                     compute_bit_environments_batch,
                     target_smiles,
                     retrieved_molecule_fp_indices,
                     fp_loader,
+                    timeout=ANALYZE_TIMEOUT_S,
                 ),
             )
         except Exception as e:
@@ -126,6 +128,16 @@ async def analyze(request: Request, data: AnalysisRequest):
         
     except HTTPException:
         raise
+    except ComputeOverloadedError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server is busy. Please retry shortly.",
+        )
+    except ComputeTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Analysis timed out.",
+        )
     except Exception as e:
         logger.error(f"[Analyze] Analysis error: {e}", exc_info=True)
         raise HTTPException(
@@ -270,10 +282,15 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
 
     try:
         if retrieved_indices:
+            pool = request.app.state.compute_pool
             bit_envs = await run_heavy(
                 request,
-                asyncio.to_thread(
-                    compute_bit_environments_batch, smiles, retrieved_indices, fp_loader
+                pool.run(
+                    compute_bit_environments_batch,
+                    smiles,
+                    retrieved_indices,
+                    fp_loader,
+                    timeout=CUSTOM_SMILES_TIMEOUT_S,
                 ),
             )
             card["bit_environments"] = bit_envs

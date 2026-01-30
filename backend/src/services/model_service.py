@@ -64,8 +64,7 @@ class ModelService:
     def get_rankingset(self, model_id: Optional[str] = None):
         self.ensure_loaded(model_id)
         session = self._session(model_id)
-        ranker = session.get_rankingset()
-        return ranker.data
+        return session.get_rankingset()
 
     def preload_resources(self, model_id: Optional[str] = None) -> None:
         """

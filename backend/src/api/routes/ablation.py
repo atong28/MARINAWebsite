@@ -1,6 +1,5 @@
 """Ablation analysis endpoint."""
 
-import asyncio
 import logging
 from typing import Dict, Any
 
@@ -9,7 +8,7 @@ from fastapi import APIRouter, HTTPException, status, Request
 
 from src.api.app import run_heavy
 from src.api.middleware.rate_limit import get_limiter
-from src.config import MOLECULE_IMG_SIZE
+from src.config import ABLATION_TIMEOUT_S, MOLECULE_IMG_SIZE
 from src.domain.drawing.draw import (
     compute_bit_environments_batch,
     draw_similarity_comparison,
@@ -20,6 +19,7 @@ from src.domain.models.analysis_result import AblationRequest, AblationResponse
 from src.domain.predictor import predict_from_raw
 from src.services.model_manifest import resolve_and_validate_model_id
 from src.services.model_service import ModelService
+from src.services.compute_pool import ComputeOverloadedError, ComputeTimeoutError
 
 logger = logging.getLogger(__name__)
 router = APIRouter()
@@ -65,11 +65,26 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
         )
 
     try:
+        pool = request.app.state.compute_pool
         prediction_output = await run_heavy(
             request,
-            asyncio.to_thread(
-                predict_from_raw, raw_data, k=1, model_id=mid
+            pool.run(
+                predict_from_raw,
+                raw_data,
+                k=1,
+                model_id=mid,
+                timeout=ABLATION_TIMEOUT_S,
             ),
+        )
+    except ComputeOverloadedError:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Server is busy. Please retry shortly.",
+        )
+    except ComputeTimeoutError:
+        raise HTTPException(
+            status_code=status.HTTP_504_GATEWAY_TIMEOUT,
+            detail="Ablation prediction timed out.",
         )
     except Exception as exc:
         logger.error("Ablation prediction failed: %s", exc, exc_info=True)
@@ -108,14 +123,16 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
     similarity_map_encoded = None
     try:
         fp_tensor = torch.tensor(pred_fp_list, dtype=torch.float32)
+        pool = request.app.state.compute_pool
         similarity_img = await run_heavy(
             request,
-            asyncio.to_thread(
+            pool.run(
                 draw_similarity_comparison,
                 fp_tensor,
                 data.smiles,
                 fp_loader,
                 img_size=MOLECULE_IMG_SIZE,
+                timeout=ABLATION_TIMEOUT_S,
             ),
         )
         similarity_map_encoded = pil_image_to_base64(similarity_img)
@@ -132,13 +149,15 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
     bit_environments: Dict[int, Dict[str, Any]] = {}
     if active_bit_indices:
         try:
+            pool = request.app.state.compute_pool
             bit_environments = await run_heavy(
                 request,
-                asyncio.to_thread(
+                pool.run(
                     compute_bit_environments_batch,
                     data.smiles,
                     active_bit_indices,
                     fp_loader,
+                    timeout=ABLATION_TIMEOUT_S,
                 ),
             )
         except Exception as exc:
@@ -147,9 +166,10 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
     change_overlay_svg = None
     if data.reference_fp is not None:
         try:
+            pool = request.app.state.compute_pool
             change_overlay_svg = await run_heavy(
                 request,
-                asyncio.to_thread(
+                pool.run(
                     render_molecule_with_change_overlays,
                     data.smiles,
                     data.reference_fp,
@@ -157,6 +177,7 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
                     fp_loader,
                     threshold=data.bit_threshold,
                     img_size=MOLECULE_IMG_SIZE,
+                    timeout=ABLATION_TIMEOUT_S,
                 ),
             )
         except Exception as exc:

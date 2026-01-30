@@ -12,7 +12,6 @@ from src.domain.models.analysis_result import (
     SecondaryRetrievalRequest,
     SecondaryRetrievalResponse,
 )
-from src.domain.ranker import RankingSet
 from src.services.model_manifest import resolve_and_validate_model_id
 from src.services.model_service import ModelService
 from src.services.molecule_renderer import MoleculeRenderer
@@ -68,13 +67,8 @@ async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest)
                 difference_fp=difference_fp.tolist(),
             )
 
-        rankingset = model_service.get_rankingset(mid)
-        if rankingset is None:
-            raise HTTPException(
-                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-                detail="Rankingset not available",
-            )
-        ranker = RankingSet(store=rankingset, metric="cosine")
+        session = model_service.get_session(mid)
+        ranker = session.get_rankingset()
         sims, idxs = ranker.retrieve_with_scores(difference_fp.unsqueeze(0), n=k)
         sims = sims.squeeze()
         idxs = idxs.squeeze()
@@ -85,9 +79,10 @@ async def secondary_retrieval(request: Request, data: SecondaryRetrievalRequest)
         if not isinstance(idx_list, list):
             idx_list = [idx_list]
         pairs = [(int(idx_list[i]), float(sim_list[i])) for i in range(len(sim_list))]
-        session = model_service.get_session(mid)
         fp_loader = model_service.get_fp_loader(mid)
         molecule_renderer = MoleculeRenderer.instance()
+        # Use the full rankingset tensor for build_result_cards
+        rankingset = ranker.data
         results = build_result_cards(
             session,
             rankingset,

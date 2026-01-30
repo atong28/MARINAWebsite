@@ -32,12 +32,18 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# OpenAPI root path for gateway (e.g. /api/marina or /api/spectre) so docs and Try-it-out use correct base
+OPENAPI_ROOT_PATH = os.getenv("OPENAPI_ROOT_PATH", "")
+SERVICE_MODEL_TYPE = os.getenv("SERVICE_MODEL_TYPE", "marina")
+OPENAPI_TITLE = f"{SERVICE_MODEL_TYPE.upper()} API" if SERVICE_MODEL_TYPE else "MARINA API"
+
 # Create FastAPI app
 # Note: OpenAPI docs URLs are set after routers are included to ensure /api prefix
 app = FastAPI(
-    title="MARINA API",
+    title=OPENAPI_TITLE,
     description="Molecular Structure Annotator API",
-    version="2.0.0"
+    version="2.0.0",
+    root_path=OPENAPI_ROOT_PATH,
 )
 
 # Setup middleware

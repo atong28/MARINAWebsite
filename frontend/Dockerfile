@@ -16,8 +16,8 @@ RUN npm ci
 COPY src/ ./src/
 COPY index.html ./
 
-# Set production API base URLs for build
-ARG VITE_API_BASE=/api
+# Set production API base URLs for build (gateway exposes only /api/marina and /api/spectre)
+ARG VITE_API_BASE=/api/marina
 ARG VITE_API_BASE_MARINA=/api/marina
 ARG VITE_API_BASE_SPECTRE=/api/spectre
 ENV VITE_API_BASE=${VITE_API_BASE}

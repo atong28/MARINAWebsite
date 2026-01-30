@@ -13,6 +13,16 @@ router = APIRouter()
 _server_start_time = time.time()
 
 
+@router.get("/health/live", status_code=status.HTTP_200_OK)
+async def health_live():
+    """
+    Minimal liveness probe: process is up and event loop is responding.
+    No model registry or is_ready() — use for Docker/orchestrator healthchecks
+    so the container is not marked unhealthy when busy or during model load.
+    """
+    return {"status": "alive"}
+
+
 @router.get("/health", status_code=status.HTTP_200_OK)
 async def health():
     """Health check endpoint with model status."""

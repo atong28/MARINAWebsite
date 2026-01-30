@@ -1,6 +1,7 @@
 """
 Analysis and custom-card endpoints for detailed molecular fingerprint analysis.
 """
+import asyncio
 import logging
 from typing import List
 
@@ -94,10 +95,11 @@ async def analyze(request: Request, data: AnalysisRequest):
             )
         
         try:
-            bit_environments = compute_bit_environments_batch(
-                smiles=target_smiles,
-            fp_indices=retrieved_molecule_fp_indices,
-                fp_loader=fp_loader
+            bit_environments = await asyncio.to_thread(
+                compute_bit_environments_batch,
+                target_smiles,
+                retrieved_molecule_fp_indices,
+                fp_loader,
             )
         except Exception as e:
             raise HTTPException(
@@ -272,7 +274,9 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
 
     try:
         if retrieved_indices:
-            bit_envs = compute_bit_environments_batch(smiles, retrieved_indices, fp_loader)
+            bit_envs = await asyncio.to_thread(
+                compute_bit_environments_batch, smiles, retrieved_indices, fp_loader
+            )
             card["bit_environments"] = bit_envs
         else:
             card["bit_environments"] = {}

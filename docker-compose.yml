@@ -37,10 +37,9 @@ services:
       - marina-net
     restart: unless-stopped
     healthcheck:
-      # Health check uses internal container port (5000)
-      # Use pixi run to access python in the pixi environment
-      test: ["CMD", "pixi", "run", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health')"]
-      interval: 30s
+      # Liveness probe: minimal endpoint so container stays healthy when busy or during model load
+      test: ["CMD", "pixi", "run", "python", "-c", "import requests; requests.get('http://localhost:5000/api/health/live')"]
+      interval: 60s
       timeout: 10s
       retries: 3
       start_period: 60s

@@ -1,6 +1,7 @@
 """
 Prediction endpoint for spectral data.
 """
+import asyncio
 import logging
 
 import torch
@@ -67,7 +68,9 @@ async def predict(request: Request, data: PredictRequest):
         if data.raw.mw:
             raw_data["mw"] = data.raw.mw
 
-        out = predict_from_raw(raw_data, k=MAX_TOP_K, model_id=mid)
+        out = await asyncio.to_thread(
+            predict_from_raw, raw_data, k=MAX_TOP_K, model_id=mid
+        )
         if not isinstance(out, tuple) or len(out) < 2:
             logger.error("Unexpected predictor output: %s", out)
             raise HTTPException(

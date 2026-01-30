@@ -1,5 +1,6 @@
 """Ablation analysis endpoint."""
 
+import asyncio
 import logging
 from typing import Dict, Any
 
@@ -67,7 +68,9 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
         )
 
     try:
-        prediction_output = predict_from_raw(raw_data, k=1, model_id=mid)
+        prediction_output = await asyncio.to_thread(
+            predict_from_raw, raw_data, k=1, model_id=mid
+        )
     except Exception as exc:
         logger.error("Ablation prediction failed: %s", exc, exc_info=True)
         raise HTTPException(
@@ -105,7 +108,13 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
     similarity_map_encoded = None
     try:
         fp_tensor = torch.tensor(pred_fp_list, dtype=torch.float32)
-        similarity_img = draw_similarity_comparison(fp_tensor, data.smiles, fp_loader, img_size=MOLECULE_IMG_SIZE)
+        similarity_img = await asyncio.to_thread(
+            draw_similarity_comparison,
+            fp_tensor,
+            data.smiles,
+            fp_loader,
+            img_size=MOLECULE_IMG_SIZE,
+        )
         similarity_map_encoded = pil_image_to_base64(similarity_img)
     except Exception as exc:
         logger.warning("Failed to generate similarity map for ablation: %s", exc)
@@ -120,14 +129,20 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
     bit_environments: Dict[int, Dict[str, Any]] = {}
     if active_bit_indices:
         try:
-            bit_environments = compute_bit_environments_batch(data.smiles, active_bit_indices, fp_loader)
+            bit_environments = await asyncio.to_thread(
+                compute_bit_environments_batch,
+                data.smiles,
+                active_bit_indices,
+                fp_loader,
+            )
         except Exception as exc:
             logger.warning("Failed to compute bit environments for ablation: %s", exc)
 
     change_overlay_svg = None
     if data.reference_fp is not None:
         try:
-            change_overlay_svg = render_molecule_with_change_overlays(
+            change_overlay_svg = await asyncio.to_thread(
+                render_molecule_with_change_overlays,
                 data.smiles,
                 data.reference_fp,
                 pred_fp_list,

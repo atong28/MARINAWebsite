@@ -270,7 +270,7 @@ export function useHealth(options?: UseQueryOptions<HealthResponse>) {
   return useQuery({
     queryKey: ['health'],
     queryFn: api.health,
-    refetchInterval: 30000, // Check every 30 seconds
+    refetchInterval: 60000, // Check every 60 seconds
     ...options,
   })
 }

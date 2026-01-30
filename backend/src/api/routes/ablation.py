@@ -55,11 +55,7 @@ async def run_ablation(request: Request, data: AblationRequest) -> AblationRespo
         raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
-    if not model_service.is_ready(mid):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Model '{mid}' is not available (not loaded).",
-        )
+    model_service.ensure_loaded(mid)
 
     raw_data = _build_raw_input(data)
     if not raw_data:

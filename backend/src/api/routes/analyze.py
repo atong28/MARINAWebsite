@@ -42,11 +42,7 @@ async def analyze(request: Request, data: AnalysisRequest):
         raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
-    if not model_service.is_ready(mid):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Model '{mid}' is not available (not loaded).",
-        )
+    model_service.ensure_loaded(mid)
     
     target_smiles = data.smiles.strip()
     if not target_smiles:
@@ -151,11 +147,7 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
         raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
-    if not model_service.is_ready(mid):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Model '{mid}' is not available (not loaded).",
-        )
+    model_service.ensure_loaded(mid)
 
     smiles = data.smiles.strip()
     if not smiles:

@@ -39,11 +39,7 @@ async def predict(request: Request, data: PredictRequest):
         raise HTTPException(status_code=code, detail=detail)
 
     model_service = ModelService.instance()
-    if not model_service.is_ready(mid):
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail=f"Model '{mid}' is not available (not loaded).",
-        )
+    model_service.ensure_loaded(mid)
 
     requested_k = data.k
     if requested_k > MAX_TOP_K:

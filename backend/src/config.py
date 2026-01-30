@@ -24,6 +24,15 @@ MODELS_JSON_PATH = os.getenv(
 MODEL_ROOT = os.getenv("MODEL_ROOT", os.path.join(DATA_DIR, "marina_best"))
 DEFAULT_MODEL_ID = os.getenv("DEFAULT_MODEL_ID", "marina_best")
 
+# Startup preload: "default" (only default model), "all", or comma-separated model ids
+PRELOAD_MODELS = os.getenv("PRELOAD_MODELS", "default").strip()
+
+# Max models to keep in memory; 0 = no cap. LRU eviction when exceeded.
+MAX_LOADED_MODELS = int(os.getenv("MAX_LOADED_MODELS", "0"))
+
+# Max concurrent heavy ops (predict/analyze/ablation etc); 0 = no limit.
+MAX_CONCURRENT_HEAVY_OPS = int(os.getenv("MAX_CONCURRENT_HEAVY_OPS", "0"))
+
 # Model / fingerprint artifacts (derived from MODEL_ROOT)
 CKPT_PATH = os.getenv("CKPT_PATH", os.path.join(MODEL_ROOT, "best.ckpt"))
 PARAMS_PATH = os.getenv("PARAMS_PATH", os.path.join(MODEL_ROOT, "params.json"))

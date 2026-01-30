@@ -33,6 +33,10 @@ services:
       - MOLECULE_IMG_SIZE=${MOLECULE_IMG_SIZE:-400}
       - DEFAULT_TOP_K=${DEFAULT_TOP_K:-10}
       - MAX_TOP_K=${MAX_TOP_K:-50}
+      # Lazy loading: preload only default model; optional cap and concurrency
+      - PRELOAD_MODELS=${PRELOAD_MODELS:-default}
+      - MAX_LOADED_MODELS=${MAX_LOADED_MODELS:-0}
+      - MAX_CONCURRENT_HEAVY_OPS=${MAX_CONCURRENT_HEAVY_OPS:-0}
     networks:
       - marina-net
     restart: unless-stopped

@@ -77,7 +77,7 @@ class ModelSession:
         # Default to MARINA for backwards compatibility when type is not provided.
         model_type = model_type or "marina"
 
-        logger.info("Loading model params from %s", params_path)
+        logger.debug("Loading model params from %s", params_path)
         with open(params_path, "r") as f:
             params = json.load(f)
 
@@ -95,17 +95,17 @@ class ModelSession:
         )
 
         if model_type == "spectre":
-            logger.info("Instantiating SPECTRE model")
+            logger.debug("Instantiating SPECTRE model")
             model = SPECTRE(args, fp_loader)
         else:
-            logger.info("Instantiating MARINA model")
+            logger.debug("Instantiating MARINA model")
             model = MARINA(args, fp_loader)
 
-        logger.info("Loading checkpoint from %s (cpu)", ckpt_path)
+        logger.debug("Loading checkpoint from %s (cpu)", ckpt_path)
         ckpt = torch.load(ckpt_path, map_location="cpu")
         sd = ckpt.get("state_dict", ckpt)
         res = model.load_state_dict(sd, strict=False)
-        logger.info("Model load_state_dict result: %s", res)
+        logger.debug("Model load_state_dict result: %s", res)
 
         model.to(torch.device("cpu"))
         model.eval()

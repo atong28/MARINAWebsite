@@ -37,7 +37,7 @@ def load_models_json(path: Optional[str] = None) -> List[ModelEntry]:
     global _manifest
     p = path if path is not None else MODELS_JSON_PATH
     if not os.path.isfile(p):
-        logger.info("models.json not found at %s", p)
+        logger.debug("models.json not found at %s", p)
         return []
 
     try:

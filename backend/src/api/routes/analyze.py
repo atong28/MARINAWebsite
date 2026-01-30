@@ -21,6 +21,7 @@ from src.services.result_builder import build_result_card
 from src.domain.drawing.draw import compute_bit_environments_batch
 from src.domain.fingerprint.fp_loader import EntropyFPLoader
 from src.domain.fingerprint.fp_utils import tanimoto_similarity
+from src.api.app import run_heavy
 from src.config import MOLECULE_IMG_SIZE
 from src.api.middleware.rate_limit import get_limiter
 
@@ -95,11 +96,14 @@ async def analyze(request: Request, data: AnalysisRequest):
             )
         
         try:
-            bit_environments = await asyncio.to_thread(
-                compute_bit_environments_batch,
-                target_smiles,
-                retrieved_molecule_fp_indices,
-                fp_loader,
+            bit_environments = await run_heavy(
+                request,
+                asyncio.to_thread(
+                    compute_bit_environments_batch,
+                    target_smiles,
+                    retrieved_molecule_fp_indices,
+                    fp_loader,
+                ),
             )
         except Exception as e:
             raise HTTPException(
@@ -274,8 +278,11 @@ async def custom_smiles_card(request: Request, data: CustomSmilesCardRequest):
 
     try:
         if retrieved_indices:
-            bit_envs = await asyncio.to_thread(
-                compute_bit_environments_batch, smiles, retrieved_indices, fp_loader
+            bit_envs = await run_heavy(
+                request,
+                asyncio.to_thread(
+                    compute_bit_environments_batch, smiles, retrieved_indices, fp_loader
+                ),
             )
             card["bit_environments"] = bit_envs
         else:

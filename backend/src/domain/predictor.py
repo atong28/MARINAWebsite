@@ -141,7 +141,7 @@ def _run_model(session: ModelSession, processed: Dict[str, torch.Tensor]) -> tor
     Handles both MARINA (dict-based) and SPECTRE (stacked tensor + type_indicator).
     """
     with _forward_lock, torch.no_grad():
-        logger.info("Calling model forward for type=%s...", getattr(session, "type", "marina"))
+        logger.debug("Calling model forward for type=%s...", getattr(session, "type", "marina"))
 
         if getattr(session, "type", "marina") == "spectre":
             inputs, type_indicator = _to_spectre_batch(processed)
@@ -152,7 +152,7 @@ def _run_model(session: ModelSession, processed: Dict[str, torch.Tensor]) -> tor
             )
             out = session.model(batch_inputs)
 
-        logger.info(f"Model output shape: {out.shape}")
+        logger.debug(f"Model output shape: {out.shape}")
         preds = out.detach().cpu()
         return preds[0]
 
@@ -168,7 +168,7 @@ def _retrieve_top_k(session: ModelSession, pred_fp: torch.Tensor, k: int):
         k_int = 5
 
     pred = torch.sigmoid(pred_fp)
-    logger.info("Pred FP sum: %s", torch.where(pred.squeeze() > 0.5, 1, 0).sum())
+    logger.debug("Pred FP sum: %s", torch.where(pred.squeeze() > 0.5, 1, 0).sum())
 
     ranker = session.get_rankingset()
     sims, idxs = ranker.retrieve_with_scores(pred.unsqueeze(0), n=k_int)
@@ -183,13 +183,13 @@ def predict_from_raw(
     model_id: str | None = None,
 ):
     """Accepts a raw input dict (same spec as SpectralInputLoader.load output) and returns top-k."""
-    logger.info("predict_from_raw called with k=%r (type: %s)", k, type(k))
-    logger.info("raw_inputs keys: %s", list(raw_inputs.keys()))
+    logger.debug("predict_from_raw called with k=%r (type: %s)", k, type(k))
+    logger.debug("raw_inputs keys: %s", list(raw_inputs.keys()))
 
     session = get_session(model_id)
 
     processed = _preprocess_raw_inputs(raw_inputs)
-    logger.info("Processed inputs: %s", list(processed.keys()))
+    logger.debug("Processed inputs: %s", list(processed.keys()))
 
     pred_fp = _run_model(session, processed)
     vals, idxs, pred_prob = _retrieve_top_k(session, pred_fp, k)

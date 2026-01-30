@@ -18,8 +18,8 @@ def build_result_card(
 ) -> Dict:
     """Build a result card dictionary from metadata entry."""
     # Choose display SMILES
-    logger.info(f"Building result card for index: {idx}")
-    logger.info(f"Entry: {entry}")
+    logger.debug(f"Building result card for index: {idx}")
+    logger.debug(f"Entry: {entry}")
     smiles = entry.get('canonical_3d_smiles')
     if smiles is None or smiles == 'N/A':
         smiles = entry.get('canonical_2d_smiles')

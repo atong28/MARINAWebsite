@@ -7,6 +7,7 @@ import logging
 import torch
 from fastapi import APIRouter, HTTPException, Request, status
 
+from src.api.app import run_heavy
 from src.api.middleware.rate_limit import get_limiter
 from src.config import MAX_TOP_K, MOLECULE_IMG_SIZE
 from src.domain.predictor import predict_from_raw
@@ -68,8 +69,11 @@ async def predict(request: Request, data: PredictRequest):
         if data.raw.mw:
             raw_data["mw"] = data.raw.mw
 
-        out = await asyncio.to_thread(
-            predict_from_raw, raw_data, k=MAX_TOP_K, model_id=mid
+        out = await run_heavy(
+            request,
+            asyncio.to_thread(
+                predict_from_raw, raw_data, k=MAX_TOP_K, model_id=mid
+            ),
         )
         if not isinstance(out, tuple) or len(out) < 2:
             logger.error("Unexpected predictor output: %s", out)

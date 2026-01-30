@@ -16,9 +16,13 @@ RUN npm ci
 COPY src/ ./src/
 COPY index.html ./
 
-# Set production API base URL for build
+# Set production API base URLs for build
 ARG VITE_API_BASE=/api
+ARG VITE_API_BASE_MARINA=/api/marina
+ARG VITE_API_BASE_SPECTRE=/api/spectre
 ENV VITE_API_BASE=${VITE_API_BASE}
+ENV VITE_API_BASE_MARINA=${VITE_API_BASE_MARINA}
+ENV VITE_API_BASE_SPECTRE=${VITE_API_BASE_SPECTRE}
 
 # Build
 RUN npm run build

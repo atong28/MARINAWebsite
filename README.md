@@ -1,8 +1,24 @@
 # MARINA Website
 
-The gateway exposes only `/api/marina` and `/api/spectre`; there is no generic `/api` base. OpenAPI docs (Swagger/ReDoc) are at `/api/marina/docs`, `/api/marina/redoc`, `/api/spectre/docs`, and `/api/spectre/redoc`.
+## Installation
 
-To run:
-```bash
-docker compose up -d
+Just install pixi and npm
+
+## Dev running (no docker)
+Enter `backend/` and run in two windows
+```
+pixi run dev-marina
+```
+```
+pixi run dev-spectre
+```
+Enter `frontend/` and run
+```
+npm run dev
+```
+(If first time running, run `npm i` first)
+
+## Prod running (docker)
+```
+bash restart.sh
 ```
